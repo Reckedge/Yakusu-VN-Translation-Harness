@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yakusoku</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <path id="petal-shape" d="M0 0C-6.5-4.5-7-12.5-2.4-15.6L0-13.2L2.4-15.6C7-12.5 6.5-4.5 0 0Z"/>
+    <symbol id="flower" viewBox="-17 -17 34 34">
+      <g fill="#f2b8cb">
+        <use href="#petal-shape"/>
+        <use href="#petal-shape" transform="rotate(72)"/>
+        <use href="#petal-shape" transform="rotate(144)"/>
+        <use href="#petal-shape" transform="rotate(216)"/>
+        <use href="#petal-shape" transform="rotate(288)"/>
+      </g>
+      <circle r="3.2" fill="#d2465a"/>
+      <g stroke="#e58fae" stroke-width=".9" stroke-linecap="round">
+        <path d="M0 0L0-6.5M0 0L6.2-2M0 0L3.8 5.3M0 0L-3.8 5.3M0 0L-6.2-2"/>
+      </g>
+    </symbol>
+    <symbol id="bud" viewBox="-6 -9 12 18">
+      <path d="M0 8C-4 4-4-3 0-8 4-3 4 4 0 8Z" fill="#e58fae"/>
+    </symbol>
+    <!-- An original branch: one bough, three twigs, blossoms in clusters. -->
+    <symbol id="branch" viewBox="0 0 420 270">
+      <g fill="none" stroke="#2b2140" stroke-linecap="round">
+        <path d="M-10 28C70 30 120 52 178 86S300 150 410 152" stroke-width="11"/>
+        <path d="M150 70C170 40 196 22 236 12" stroke-width="5"/>
+        <path d="M232 112C246 150 252 186 276 232" stroke-width="5.5"/>
+        <path d="M322 140C344 116 368 104 398 98" stroke-width="3.5"/>
+        <path d="M84 40C96 64 98 90 92 118" stroke-width="3.5"/>
+      </g>
+      <g>
+        <use href="#flower" x="208" y="4" width="34" height="34" opacity=".95"/>
+        <use href="#flower" x="232" y="-6" width="24" height="24" opacity=".7" transform="rotate(14 244 6)"/>
+        <use href="#flower" x="168" y="34" width="28" height="28" opacity=".85"/>
+        <use href="#flower" x="128" y="58" width="22" height="22" opacity=".6"/>
+        <use href="#flower" x="256" y="196" width="36" height="36"/>
+        <use href="#flower" x="236" y="160" width="26" height="26" opacity=".75"/>
+        <use href="#flower" x="282" y="226" width="22" height="22" opacity=".6"/>
+        <use href="#flower" x="300" y="122" width="30" height="30" opacity=".9"/>
+        <use href="#flower" x="380" y="84" width="28" height="28" opacity=".8"/>
+        <use href="#flower" x="352" y="100" width="18" height="18" opacity=".55"/>
+        <use href="#flower" x="76" y="104" width="28" height="28" opacity=".85"/>
+        <use href="#flower" x="40" y="18" width="20" height="20" opacity=".5"/>
+        <use href="#bud" x="196" y="40" width="9" height="14" opacity=".9"/>
+        <use href="#bud" x="268" y="168" width="8" height="12"/>
+        <use href="#bud" x="400" y="140" width="9" height="14" opacity=".8"/>
+        <use href="#bud" x="104" y="80" width="8" height="12" opacity=".7"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="shell">
+  <nav class="rail" aria-label="Steps">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">訳束</span>
+      <div>
+        <div class="brand-name">Yakusoku</div>
+        <div class="brand-game" id="railGame">No game open</div>
+      </div>
+    </div>
+    <div class="steps" id="steps">
+      <span class="thread" aria-hidden="true"></span>
+      <span class="thread-fill" id="threadFill" aria-hidden="true"></span>
+      <ol>
+      <li><button data-view="game"><span class="knot">1</span><span class="l">Game</span></button></li>
+      <li><button data-view="translator"><span class="knot">2</span><span class="l">Translator</span></button></li>
+      <li><button data-view="style"><span class="knot">3</span><span class="l">Style and names</span></button></li>
+      <li><button data-view="test"><span class="knot">4</span><span class="l">Test patch</span></button></li>
+      <li><button data-view="run"><span class="knot">5</span><span class="l">Translate and install</span></button></li>
+      </ol>
+    </div>
+    <div class="rail-extra">
+      <button data-view="lines">Lines</button>
+      <button data-view="activity">Activity</button>
+    </div>
+    <div class="rail-foot" id="railFoot"></div>
+  </nav>
+
+  <main class="main" id="main">
+    <div class="banner" id="banner" role="alert" hidden>
+      <div class="banner-text"><b id="bannerTitle">Something went wrong</b><span id="bannerMsg"></span></div>
+      <div class="banner-actions">
+        <button class="btn" id="bannerRetry">Try again</button>
+        <button class="btn btn-quiet" id="bannerLog">Details</button>
+        <button class="icon-x" id="bannerClose" aria-label="Dismiss">×</button>
+      </div>
+    </div>
+
+    <!-- 1. Game -->
+    <section class="view" data-view="game">
+      <header class="view-head">
+        <h1>Pick the game</h1>
+        <p>Choose the folder the game is installed in, the one with its .exe. Yakusoku only reads it until you install a patch, and every change can be undone.</p>
+      </header>
+      <div class="picker" id="picker">
+        <svg class="branch" aria-hidden="true"><use href="#branch"/></svg>
+        <button class="btn btn-primary btn-lg" id="browseGame">Choose game folder</button>
+        <span class="or" id="pickerHint">or drop the folder here, or paste its path</span>
+        <form class="path-form" id="pathForm">
+          <input id="gamePath" class="input" type="text" spellcheck="false" placeholder="C:\Games\さくら、もゆ。" aria-label="Game folder path">
+          <button class="btn" type="submit">Open</button>
+        </form>
+      </div>
+      <div id="detectResult"></div>
+      <div id="recent"></div>
+    </section>
+
+    <!-- 2. Translator -->
+    <section class="view" data-view="translator">
+      <header class="view-head">
+        <h1>Choose the translator</h1>
+        <p>Yakusoku sends the script to an AI model with your own API key. You pay the provider directly, and you see the estimate before anything is spent.</p>
+      </header>
+      <div class="field-group">
+        <div class="label">Provider</div>
+        <div class="seg" id="providerSeg" role="radiogroup" aria-label="Provider"></div>
+      </div>
+      <div id="providerFields"></div>
+      <div class="field-group" id="presetGroup">
+        <div class="label">Quality</div>
+        <div class="presets" id="presets" role="radiogroup" aria-label="Quality"></div>
+      </div>
+      <div class="field-group">
+        <label class="label" for="budget">Spending limit</label>
+        <div class="inline">
+          <span class="affix">$</span><input id="budget" type="number" min="0" step="1" class="input input-short" placeholder="0">
+          <span class="hint">Yakusoku stops when it has spent this much. 0 means no limit.</span>
+        </div>
+      </div>
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="adv-grid">
+          <label class="fit-field"><span>Lines per request <b id="bsVal"></b></span><input type="range" id="batchSize" min="5" max="80" step="5"></label>
+          <label class="fit-field"><span>Requests at once <b id="parVal"></b></span><input type="range" id="parallel" min="1" max="12" step="1"></label>
+          <label class="fit-field"><span>Earlier lines shown for context <b id="ctxVal"></b></span><input type="range" id="contextLines" min="0" max="30" step="1"></label>
+        </div>
+        <p class="hint">Bigger requests are a little cheaper. More at once is faster but can hit your provider's rate limit. The defaults suit most accounts.</p>
+      </details>
+    </section>
+
+    <!-- 3. Style -->
+    <section class="view wide" data-view="style">
+      <header class="view-head">
+        <h1>Style sheet and names</h1>
+        <p>The model reads a sample of the script and writes down the tone, the narrator's voice and how to spell every name. Every batch follows these notes, which keeps the translation consistent. Edit anything you disagree with.</p>
+      </header>
+      <div class="row-actions">
+        <button class="btn btn-primary" id="draftStyle">Draft from the script</button>
+        <span class="hint" id="styleHint">Costs a few cents.</span>
+      </div>
+      <div class="style-grid">
+        <div class="field-group">
+          <label class="label" for="styleText">Style sheet</label>
+          <textarea id="styleText" class="input textarea" rows="16" spellcheck="true" placeholder="Narration is first person, past tense…"></textarea>
+        </div>
+        <div class="field-group">
+          <div class="label">Character names</div>
+          <table class="names"><thead><tr><th>Japanese</th><th>English</th></tr></thead><tbody id="namesBody"></tbody></table>
+          <button class="btn btn-quiet" id="addName">Add a name</button>
+          <div class="label label-gap">Terms</div>
+          <table class="names"><thead><tr><th>Japanese</th><th>English</th></tr></thead><tbody id="termsBody"></tbody></table>
+          <button class="btn btn-quiet" id="addTerm">Add a term</button>
+        </div>
+      </div>
+      <p class="hint" id="styleSaved">Changes save automatically.</p>
+    </section>
+
+    <!-- 4. Test -->
+    <section class="view wide" data-view="test">
+      <header class="view-head">
+        <h1>Make a test patch</h1>
+        <p>Translate the first 150 lines of one script, install them, and check them in the game. If text runs out of the box, adjust the size here and apply again. Applying again doesn't re-translate, so it's free.</p>
+      </header>
+      <div class="row-actions">
+        <label class="label" for="testFile" style="margin:0">Script</label>
+        <select id="testFile" class="input input-select"></select>
+        <button class="btn btn-primary" id="runTest">Translate 150 lines and install</button>
+      </div>
+      <div class="scene" id="scene" aria-label="Text box preview">
+        <div class="stars" aria-hidden="true"></div>
+        <svg class="branch" aria-hidden="true"><use href="#branch"/></svg>
+        <div class="hill" aria-hidden="true"></div>
+        <div class="petals" aria-hidden="true" data-petals="7"></div>
+        <div class="textbox" id="textbox">
+          <div class="nameplate" id="nameplate"></div>
+          <div class="tb-text" id="tbText"></div>
+          <div class="tb-over" id="tbOver"></div>
+        </div>
+        <div class="scene-nav">
+          <button class="icon-btn" id="prevLine" aria-label="Previous line">‹</button>
+          <span id="lineCounter"></span>
+          <button class="icon-btn" id="nextLine" aria-label="Next line">›</button>
+        </div>
+      </div>
+      <div class="scene-jp" id="sceneJp" lang="ja"></div>
+      <div class="fit-controls">
+        <label class="fit-field">
+          <span>Characters per line <b id="widthVal"></b></span>
+          <input type="range" id="boxWidth" min="16" max="120" step="1">
+        </label>
+        <label class="fit-field">
+          <span>Lines per box <b id="linesVal"></b></span>
+          <input type="range" id="boxLines" min="1" max="8" step="1">
+        </label>
+        <label class="fit-field">
+          <span>Dialogue quotes</span>
+          <select id="quotes" class="input input-select">
+            <option value="auto">Automatic</option>
+            <option value="curly">“Curly”</option>
+            <option value="straight">"Straight"</option>
+            <option value="keep">「Keep Japanese」</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="insertBreaks"> Insert line breaks</label>
+      </div>
+      <p class="hint" id="boxHint"></p>
+      <div class="row-actions">
+        <button class="btn" id="applyFit">Apply to the game</button>
+        <button class="btn" id="launch1">Launch the game</button>
+        <button class="btn btn-quiet danger" id="restore1">Remove the patch</button>
+      </div>
+    </section>
+
+    <!-- 5. Run -->
+    <section class="view" data-view="run">
+      <header class="view-head">
+        <h1>Translate the whole game</h1>
+        <p>Yakusoku translates in batches and saves as it goes, so you can stop at any time and pick up later. When it finishes, it rewrites lines that overflow the text box, then builds and installs the patch.</p>
+      </header>
+      <div id="kept"></div>
+      <div class="run-summary" id="runSummary"></div>
+      <ul class="notes" id="runNotes"></ul>
+      <div class="row-actions">
+        <button class="btn btn-primary btn-lg" id="runFull">Translate everything</button>
+        <button class="btn" id="launch2">Launch the game</button>
+      </div>
+      <details class="advanced">
+        <summary>Run one stage at a time</summary>
+        <div class="row-actions">
+          <button class="btn" data-action="translate">Translate</button>
+          <button class="btn" data-action="review">Review</button>
+          <button class="btn" data-action="fit">Shorten overflowing lines</button>
+          <button class="btn" data-action="glossary">Fix name spellings</button>
+          <button class="btn" data-action="build">Rebuild and install</button>
+          <button class="btn btn-quiet danger" data-action="restore">Restore the original game</button>
+        </div>
+      </details>
+      <div id="manualNote"></div>
+    </section>
+
+    <!-- Lines -->
+    <section class="view wide" data-view="lines">
+      <header class="view-head">
+        <h1>Lines</h1>
+        <p>Every line of the script. Edit a translation and it's used the next time the patch is built. Marks like ⟦1⟧ stand for game codes (pauses, choices, colours): keep each one where it belongs.</p>
+      </header>
+      <div class="lines-bar">
+        <div class="seg seg-sm" id="lineFilter" role="radiogroup" aria-label="Filter">
+          <button data-f="all" aria-pressed="true">All</button>
+          <button data-f="translated">Translated</button>
+          <button data-f="untranslated">Not yet</button>
+          <button data-f="problems">Problems</button>
+          <button data-f="reviewed">Changed in review</button>
+          <button data-f="skipped">Skipped</button>
+        </div>
+        <input id="lineSearch" class="input" type="search" placeholder="Search Japanese, English or speaker" aria-label="Search lines">
+      </div>
+      <div class="lines-tools">
+        <button class="btn btn-quiet" id="retranslatePage" hidden>Retranslate the lines shown</button>
+        <span class="spacer"></span>
+        <button class="btn btn-quiet" id="exportCsv">Export for proofreading (CSV)</button>
+        <label class="btn btn-quiet file-btn">Import edited CSV<input type="file" id="importCsv" accept=".csv,text/csv"></label>
+      </div>
+      <div class="lines-list" id="linesList"></div>
+      <div class="pager" id="pager"></div>
+    </section>
+
+    <!-- Activity -->
+    <section class="view wide" data-view="activity">
+      <header class="view-head"><h1>Activity</h1><p>What Yakusoku has been doing, including output from the tools it runs.</p></header>
+      <pre class="log" id="log"></pre>
+    </section>
+  </main>
+</div>
+
+<div class="jobbar" id="jobbar" hidden>
+  <div class="job-text"><b id="jobStage"></b><span id="jobMsg"></span></div>
+  <div class="job-meter"><div class="job-fill" id="jobFill"></div></div>
+  <div class="job-num" id="jobNum"></div>
+  <button class="btn btn-quiet" id="jobStop">Stop</button>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

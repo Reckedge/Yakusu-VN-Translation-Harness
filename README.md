@@ -1,96 +1,59 @@
-# Yakusu 訳す
+<p align="center"><img src="docs/icon.png" width="96" alt=""></p>
 
-**Translate a Japanese visual novel into an English patch, from one window.**
+# Yakusoku 訳束
 
-Pick the game folder, paste an API key, press Translate. Yakusu pulls the script out of the game, translates it with an AI model using a style sheet and name list it drafts for you, makes the English fit the game's text box, and installs a patch. Your original files are backed up, and one click puts them back.
+Translate Japanese visual novels into English patches. Pick the game folder, paste an API key, get an installable patch. Every change can be undone.
 
-![Yakusu test patch view](docs/screenshot.png)
+The name is a pun: 約束 (*yakusoku*) means "promise"; 訳束 swaps in 訳, "translation". A bundle of translations, and a promise to play the game you've been waiting for.
 
-It grew out of a full English retranslation of *Sakura, Moyu. -as the Night's, Reincarnation-*: 53,699 lines, Haiku translating and Sonnet reviewing every line, about **$31** in API costs. Yakusu packages that pipeline so it works on other games.
+![The text box preview: translated lines wrapped exactly as the game will show them](docs/screenshot.png)
 
-## How it works
+## What it does
 
-1. **Game.** Yakusu detects the engine and reads the scripts, decrypting archives where needed. It measures the text box from the original Japanese: how many characters fit on a line and how many lines fit in a box.
-2. **Translator.** Claude (Haiku, Sonnet, Opus), any OpenAI-compatible API, or a free local model in LM Studio or Ollama. Yakusu estimates the cost for your game before spending anything, and you can set a spending limit.
-3. **Style & names.** The model reads a sample of the script and drafts a style sheet (tone, narrator voice, honorifics) plus a table of character names and terms. Every batch follows it, which keeps names and voices consistent across tens of thousands of lines. You can edit both.
-4. **Test patch.** Yakusu translates 150 lines, installs them, and shows them in a text box preview wrapped exactly as the game will draw them. If anything runs out of the box, move the slider and apply again. Re-applying doesn't re-translate, so it costs nothing.
-5. **Translate & install.** Yakusu translates the rest in parallel batches, saving as it goes so you can stop and resume. An optional review pass with a stronger model edits weak lines. Lines that still overflow the box are rewritten shorter. Then it builds and installs the patch.
+1. **Game.** Point it at the game folder. It recognises the engine (Kirikiri, FVP, Artemis, BGI, YU-RIS, QLiE, Circus, Escu:de, CatSystem2, Softpal) and reads the scripts, decrypting about 500 known encrypted Kirikiri games.
+2. **Translator.** Claude (Haiku, Sonnet, Opus), OpenAI, OpenRouter, or a local model in LM Studio / Ollama. You see a cost estimate for each quality level before anything is spent, and you can set a spending limit.
+3. **Style and names.** The model reads a sample and writes a style sheet and a glossary of character names and terms. Every batch follows them. Edit anything.
+4. **Test patch.** Translate 150 lines, install, check them in the game. The preview wraps lines exactly as the game will, using the text box measured from the original script; adjust it and apply again for free.
+5. **Translate and install.** Batches run in parallel and save as they go: stop any time, pick up later. Then a review pass by a stronger model, a glossary consistency check, a pass that rewrites lines too long for the text box, and the patch is built and installed.
 
-A **Lines** view lists every line with its translation. Edit anything, retranslate a line or a page of lines, see what the review changed, mark a line to skip, and rebuild. **Export for proofreading** writes a CSV (opens in Excel or Google Sheets) that a friend can edit; **Import** brings their edits back, with every line checked before it's used.
+Originals are never edited in place. Kirikiri games get a new `patch.xp3`; other engines have their archive rebuilt with the original backed up. Restore puts every byte back.
 
-### Built to survive long runs
+## Why it's reliable
 
-- **Stop and resume any time.** Every batch is saved the moment it comes back; a crash, a closed window or a rate limit loses at most the batches in flight.
-- **Bad replies don't cost a re-run.** A reply that's cut off or unreadable splits its batch in half and tries again. Lines that come back with broken codes are retried together, then one by one. Lines that still fail are flagged in **Lines → Problems** and retried on the next run.
-- **Rate limits and outages are waited out**, honoring the provider's `retry-after`. A bad key or an empty account stops the run with a clear message instead of retrying.
-- **Repeated lines are translated once.** VNs repeat short lines constantly ("……", "Yeah.", menu choices); identical lines from the same speaker reuse one translation, which saves money and keeps them consistent.
-- **Names stay consistent.** Speakers without an English name get one before translation starts, and a check flags lines that don't use the glossary's spelling, with a one-click fix.
-- **A spending limit you set** stops the run before it goes over.
+- **Game codes survive.** Inline codes (`[l]`, `<color>`, `%name;`, ...) become numbered placeholders. Every reply is checked: missing, invented or duplicated codes, leftover Japanese, and opening/closing pairs in the wrong order send the line back for another try.
+- **Nothing moves.** Kirikiri `.ks` scripts are parsed by Yakusoku itself; command lines (backgrounds, sprites, voices) stay on their exact lines.
+- **Crash-safe.** Results are an append-only log. A half-written line from a crash or power cut is trimmed on the next save, so nothing after it is lost.
+- **Recoverable installs.** Before a game file is replaced, its backup and the install record are written. If anything fails mid-install, Restore still knows what to put back.
+- **Speaker names stay consistent.** Where a name and a line share one string in the script (FVP), the line gets the glossary name, and the rebuilt script is re-read to check every record came out as written.
+- **Never reads its own English.** Yakusoku marks the patches it builds, so reading a game again (even after a reinstall) skips them.
+- **Repeated lines are translated once.** VNs repeat a lot ("……", "Yeah.", choices); identical lines from the same speaker reuse one translation.
 
-## Getting text back into the game
+## Install
 
-This is the hard part of any VN translation, and it's different for every engine. Yakusu handles it in layers:
+Download the Windows installer from [Releases](../../releases). It bundles everything; there is nothing else to install.
 
-- **Engine codes are protected.** Codes for click-waits, page breaks, choices, colours and embedded variables (`[l]`, `[p]`, `<link …>`, `\c[2]`, `%name;`) are swapped for numbered markers (`⟦1⟧`) before the model sees a line. Afterwards every marker is checked: a missing, duplicated or invented code sends the line back to be translated again on its own. Furigana markup is dropped, since it makes no sense over English.
-- **Commands never move.** For Kirikiri `.ks` scripts, Yakusu rewrites only the text lines in place. Every `@bg`, `@chara` and voice command stays on its original line, so backgrounds, sprites and voices stay in sync.
-- **Text fits the box.** Most engines don't word-wrap English: they either break exactly where the script says, or cut words in half. Yakusu wraps English to the box it measured, keeps line breaks that belong to codes, and sends lines that are still too long back to the model with a character limit.
-- **Encoding is handled.** Most engines store text in Shift-JIS, which can't hold "é" or an em dash. Yakusu swaps in characters the game can display, so nothing turns into "?" in the text box. (For games that need a different font or proportional spacing, VNTextProxy from VNTranslationTools can be added by hand.)
-- **Dialogue looks English.** 「」 become quotes, and 【名前】 name tags and name boxes use the English names from the glossary.
-- **Installs are reversible.** Kirikiri games get a new `patchN.xp3` and the original archives are never touched. Encrypted Kirikiri games also get KirikiriTools' `version.dll`, so they accept the unencrypted patch. For other engines, every file Yakusu replaces is backed up first, and **Remove the patch** restores everything.
+## Build from source
 
-## Supported engines
+Yakusoku is a Rust workspace: `crates/core` holds the whole engine (and its tests), `src-tauri` is a thin desktop window, and `ui/` is the interface.
 
-| Engine | Level | How |
-|---|---|---|
-| Kirikiri / KiriKiri Z (`.xp3`, `.ks`, `.scn`) | **Automatic** | Reads `.xp3` directly (msg-tool decrypts ~500 known encrypted games), rewrites `.ks` in place, packs `patchN.xp3` |
-| FAVORITE / FVP (`.hcb`) | Experimental | msg-tool reads and writes the script, which Yakusu replaces with a backup |
-| Artemis, BGI/Ethornell, YU-RIS, QLiE, Circus, Escu:de | Experimental | msg-tool unpacks, patches and repacks the archive |
-| CatSystem2, Softpal | Manual step | Yakusu reads the archive and writes patched scripts; you pack them back |
-| AdvHD, Majiro, RealLive, Ren'Py, ShSystem, SystemNNN, Musica, … | Manual step | Extract the scripts (GARbro, unrpa), then use **Translate script files**: msg-tool or VNTextPatch reads and writes them |
-| SiglusEngine | Not yet | No open tool rebuilds `Scene.pck` reliably |
+```sh
+cargo test -p yakusoku-core                     # unit, end-to-end and recovery tests, no network
+cargo run -p yakusoku                           # the desktop app (needs Tauri's system deps on Linux)
 
-"Experimental" means the code path exists and is built on msg-tool's tested format support, but hasn't yet been tried against a retail game for that engine. Please report what works.
-
-## Running it
-
-**Windows app:** download `Yakusu-windows.zip` from Releases, unzip it, and run `Yakusu.exe`. All the tools it needs are inside.
-
-**From source** (any OS, Python 3.10+):
-
-```bash
-python -m yakusu            # app window (needs: pip install pywebview)
-python -m yakusu --browser  # or in your browser
+# The interface in a browser, with a stand-in model (no key, no cost):
+YAKUSOKU_FAKE_LLM=1 cargo run -p yakusoku-core --features dev-server --bin yakusoku-dev
 ```
 
-From source you also need msg-tool on your PATH or in `tools/` (`cargo install --git https://github.com/lifegpc/msg-tool`). Kirikiri `.ks` games work without it.
+Windows release build: `packaging\fetch_tools.ps1` builds and fetches the bundled tools into `tools/`, then `cargo tauri build` in `src-tauri` makes the NSIS installer. CI does both on every `v*` tag.
 
-## Development
+Archive tests against the real msg-tool run when `YAKUSOKU_REAL_MSG_TOOL` points at a build. The large test (`cargo test --release -- --ignored large`) pushes 100,000 lines through extract, translate, build, install and restore in about four seconds with the stand-in model.
 
-```bash
-pip install pytest
-python -m pytest -q tests
-```
+## Data
 
-- `tests/test_llm.py` runs the API client against a mock server: request shape, cost math, rate limits with `retry-after`, bad keys, out-of-credit errors, truncated replies, and OpenAI parameter fallbacks.
-- `tests/test_engines.py` drives the archive engines and script-folder mode through a stand-in msg-tool, and checks batch splitting on truncated replies and that Stop keeps finished work.
-- `tests/test_server.py` checks the per-launch token, the whole flow over HTTP, refusing a second job, and that Stop reaches a running job.
-- `tests/test_e2e.py` builds a small Kirikiri game (an `.xp3` with UTF-16 and Shift-JIS scripts, name lines, choices, ruby and TJS blocks). It then runs the whole pipeline with a fake model (extract, style, translate, review, shorten, build, install, re-install, restore) and checks that every command line is byte-identical and the original files are untouched.
-- `tests/test_units.py` covers code protection, wrapping, box measurement, encoding and the `.ks` and `.xp3` formats.
+Projects live in `%LOCALAPPDATA%\Yakusoku` (`~/.yakusoku` elsewhere), one folder per game: the extracted lines, translations, costs, style sheet and glossary. API keys are stored only on this computer. The **Lines** view exports a CSV for proofreading and imports it back.
 
-To build the Windows app, run `packaging/fetch_tools.ps1` (builds msg-tool, downloads VNTextPatch and KirikiriTools), then `pyinstaller packaging/yakusu.spec`. `.github/workflows/build.yml` does both on every version tag.
+## License
 
-```
-yakusu/
-  core/      pipeline, prompts, LLM clients, code protection, text fitting, project storage
-  engines/   kirikiri (+ ks, xp3), generic msg-tool engines, script-folder mode
-  web/       the interface
-  server.py  local server (127.0.0.1 only, per-launch token)
-```
+GPL-3.0-or-later. See [THIRD_PARTY.md](THIRD_PARTY.md) for the bundled tools and the fonts.
 
-## Notes
-
-- Use it on games you own. A patch built by Yakusu contains the game's script, so don't redistribute the generated files. Share the tool, not the patch.
-- Yakusu sends script text to the model provider you choose, and to nothing else. Keys and projects stay in `%LOCALAPPDATA%\Yakusu`.
-- Third-party tools and their licenses are listed in [THIRD_PARTY.md](THIRD_PARTY.md). Yakusu is GPL-3.0 because it includes msg-tool's game database.
-
-Made by [Reckedge](https://github.com/Reckedge).
+This tool is for translating games you own. Don't distribute game scripts.

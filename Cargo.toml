@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "src-tauri"]
+default-members = ["crates/core", "src-tauri"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["Reckedge"]
+repository = "https://github.com/Reckedge/Yakusu-VN-Translation-Harness"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
