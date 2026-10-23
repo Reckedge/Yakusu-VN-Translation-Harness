@@ -12,11 +12,14 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 
 # 1. msg-tool (lifegpc/msg-tool, GPL-3.0): scripts + archives for ~20 engines.
+#    Built with one small patch (packaging\msg-tool-safe-paths.patch) that keeps
+#    every unpacked archive entry inside the output folder.
 $MSGTOOL_REF = '64856108ef5aa18d15f5debc67ff2ade2fda2c45'
-if (-not (Test-Path "$tmp\msg-tool\.git")) { git clone https://github.com/lifegpc/msg-tool "$tmp\msg-tool"; Check 'git clone msg-tool' }
+if (-not (Test-Path "$tmp\msg-tool\.git")) { git -c core.autocrlf=false clone https://github.com/lifegpc/msg-tool "$tmp\msg-tool"; Check 'git clone msg-tool' }
 Push-Location "$tmp\msg-tool"
 git fetch origin; Check 'git fetch'
 git checkout --force $MSGTOOL_REF; Check 'git checkout'
+git apply --ignore-whitespace "$root\packaging\msg-tool-safe-paths.patch"; Check 'patch msg-tool'
 cargo build --release --no-default-features --features "all-script,all-arc"; Check 'msg-tool build'
 Copy-Item target\release\msg_tool.exe "$tools\msg-tool.exe" -Force
 Pop-Location

@@ -19,11 +19,12 @@ jobs:
         id: msgtool
         with:
           path: ~/msg_tool
-          key: msgtool-${{ env.MSGTOOL_REF }}
+          key: msgtool-${{ env.MSGTOOL_REF }}-${{ hashFiles('packaging/msg-tool-safe-paths.patch') }}
       - if: steps.msgtool.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/lifegpc/msg-tool /tmp/msg-tool
           cd /tmp/msg-tool && git checkout $MSGTOOL_REF
+          git apply "$GITHUB_WORKSPACE/packaging/msg-tool-safe-paths.patch"
           cargo build --release --no-default-features --features "all-script,all-arc"
           cp target/release/msg_tool ~/msg_tool
       - run: cargo fmt --all --check

@@ -302,6 +302,11 @@ impl App {
 
     // ------------------------------------------------------------ state
     pub fn state(&self) -> Value {
+        // The job first: if it reads "finished", the project state read after
+        // it already includes everything that job did. (Read the other way
+        // round, a job finishing in between was reported as done alongside
+        // the project as it was before the job's last step.)
+        let job = self.job();
         let (settings, matches, project) = {
             let i = self.inner.lock().unwrap();
             (i.settings.clone(), i.matches.clone(), i.project.clone())
@@ -333,7 +338,7 @@ impl App {
             "prices": llm::prices_json(),
             "matches": matches,
             "project": proj,
-            "job": self.job(),
+            "job": job,
             "logs": logs[logs.len().saturating_sub(200)..],
             "platform": std::env::consts::OS,
             "recent": self.recent(8),
@@ -530,6 +535,26 @@ impl App {
         }
         if let Some(v) = a.get("review_model").and_then(Value::as_str) {
             s.review_model.insert(prov.clone(), v.trim().into());
+        }
+        // {"model": [input, output]} in USD per million tokens; empty clears.
+        if let Some(prices) = a.get("prices").and_then(Value::as_object) {
+            for (model, v) in prices {
+                let model = model.trim();
+                if model.is_empty() {
+                    continue;
+                }
+                let n = |i: usize| {
+                    v.get(i).and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.trim().parse().ok())))
+                };
+                match (n(0), n(1)) {
+                    (Some(i), Some(o)) if i.is_finite() && o.is_finite() && i >= 0.0 && o >= 0.0 => {
+                        s.prices.insert(model.into(), [i, o]);
+                    }
+                    _ => {
+                        s.prices.shift_remove(model);
+                    }
+                }
+            }
         }
         self.env.save_settings(s)?;
         Ok(json!({"ok": true}))

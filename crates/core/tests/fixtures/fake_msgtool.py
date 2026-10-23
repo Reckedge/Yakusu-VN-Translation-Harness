@@ -51,8 +51,12 @@ def main(argv):
         return 0 if n else 2
     if cmd == 'import':
         src, jdir, out = rest
+        status = 0
         for rel in files(src):
             if not rel.endswith('.scr'):
+                # Like the real tool: a file it can't import fails the run.
+                print(f'Error: {rel}: Unsupported script type')
+                status = 1
                 continue
             j = os.path.join(jdir, os.path.splitext(rel)[0] + '.json')
             if not os.path.exists(j):
@@ -63,7 +67,7 @@ def main(argv):
             with open(dst, 'w', encoding='utf-8') as f:
                 for e in entries:
                     f.write((e.get('name') or '') + '|' + e['message'].replace('\n', '\\n') + '\n')
-        return 0
+        return status
     if cmd == 'unpack':
         arc, out = rest
         # Like the real msg-tool (main.rs, unpack_archive: pb.set_extension("")),

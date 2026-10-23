@@ -9,7 +9,9 @@
 //! Engines whose archives can be read but not rebuilt are "manual": Yakusu
 //! produces the patched script files and says where they go.
 
-use super::{clean_dir, copy_tree, join_rel, list_files, msgtool, read_json_messages, Ctx, Engine, Entry, Match};
+use super::{
+    clean_dir, copy_tree, join_rel, list_files, msgtool, read_json_messages, Ctx, Engine, Entry, Installer, Match,
+};
 use crate::error::{user, Result};
 use serde_json::{Map, Value};
 use std::fs;
@@ -251,11 +253,46 @@ pub fn detect_unsupported(game_dir: &Path) -> Option<Match> {
     None
 }
 
-/// A folder name for one archive's work files. msg-tool strips the last
-/// extension from output folders ("data.pfs" becomes "data"), so keys never
-/// contain a dot: what we ask for is where the files land.
+/// A folder name for one archive's work files: readable, unique (it ends in
+/// a hash of the full path, so "data.0.pfs" and "data_0.pfs" differ), and
+/// without dots, because msg-tool strips the last extension from output
+/// folders ("data.pfs" would become "data"): what we ask for is where the
+/// files land.
 pub fn dir_key(rel: &str) -> String {
+    let norm = rel.replace('\\', "/");
+    let base: String =
+        norm.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).take(48).collect();
+    let hash = sha1_smol::Sha1::from(norm.as_bytes()).digest().to_string();
+    format!("{base}-{}", &hash[..10])
+}
+
+/// Keys used before 0.3. They could collide; kept so projects that were
+/// already read keep their line IDs (and so their translations).
+fn legacy_dir_key(rel: &str) -> String {
     rel.replace(['/', '\\'], "__").replace('.', "_")
+}
+
+/// The work-folder key for each of `files`: the one recorded at the last
+/// read if any, the legacy key for a project read before keys were hashed
+/// (when those are unique), else [`dir_key`]. Always unique.
+pub fn work_keys(files: &[String], previous: Option<&Map<String, Value>>, read_before: bool) -> Map<String, Value> {
+    let legacy: Vec<String> = files.iter().map(|r| legacy_dir_key(r)).collect();
+    let legacy_ok = legacy.iter().collect::<std::collections::HashSet<_>>().len() == legacy.len();
+    let mut keys = Map::new();
+    for (rel, old) in files.iter().zip(&legacy) {
+        let key = previous
+            .and_then(|p| p.get(rel))
+            .and_then(Value::as_str)
+            .map(String::from)
+            .or_else(|| (read_before && legacy_ok).then(|| old.clone()))
+            .unwrap_or_else(|| dir_key(rel));
+        keys.insert(rel.clone(), Value::from(key));
+    }
+    let distinct = keys.values().filter_map(Value::as_str).collect::<std::collections::HashSet<_>>().len();
+    if distinct != keys.len() || keys.values().filter_map(Value::as_str).any(|k| k.contains('.') || k.is_empty()) {
+        return files.iter().map(|r| (r.clone(), Value::from(dir_key(r)))).collect();
+    }
+    keys
 }
 
 /// The engine version stored in a YU-RIS .ypf header (needed to rebuild it).
@@ -303,6 +340,23 @@ pub fn verify_rebuilt(
     (original.len().min(expected.len()), bad)
 }
 
+/// Files under `src` (relative paths) that have a translated JSON file in
+/// `json_dir`: "sub/a.ast" pairs with "sub/a.json".
+pub fn scripts_with_json(src: &Path, json_dir: &Path) -> Vec<String> {
+    let have: std::collections::HashSet<String> =
+        list_files(json_dir, Some(&[".json"])).into_iter().map(|j| j[..j.len() - 5].to_lowercase()).collect();
+    list_files(src, None)
+        .into_iter()
+        .filter(|f| {
+            let stem = match f.rfind('.') {
+                Some(i) if i > f.rfind('/').map_or(0, |s| s + 1) => &f[..i],
+                _ => f.as_str(),
+            };
+            have.contains(&stem.to_lowercase())
+        })
+        .collect()
+}
+
 pub struct MsgToolEngine {
     pub m: Match,
 }
@@ -310,6 +364,17 @@ pub struct MsgToolEngine {
 impl MsgToolEngine {
     fn prof(&self) -> &'static Profile {
         profile(self.m.str("profile").unwrap_or(&self.m.engine_id)).or_else(|| profile(&self.m.engine_id)).unwrap()
+    }
+
+    /// The work-folder key for `rel`, as recorded when the scripts were read.
+    fn key(&self, rel: &str) -> String {
+        self.m
+            .details
+            .get("work_keys")
+            .and_then(|m| m.get(rel))
+            .and_then(Value::as_str)
+            .map(String::from)
+            .unwrap_or_else(|| dir_key(rel))
     }
 
     /// Extra arguments needed to rebuild `rel`.
@@ -333,7 +398,7 @@ impl MsgToolEngine {
     /// FVP: names and lines can share one string in the .hcb. Re-export the
     /// rebuilt script and check every record came out as written.
     fn verify_favorite(&mut self, cx: &Ctx, rel: &str, src: &Path, patched: &Path) -> Result<()> {
-        let key = dir_key(rel);
+        let key = self.key(rel);
         let tmp = cx.project.work("verify");
         clean_dir(&tmp)?;
         let all_flag = ["--favorite-hcb-no-filter-ascii"];
@@ -395,9 +460,19 @@ impl Engine for MsgToolEngine {
         let json_root = cx.project.work("json");
         clean_dir(&json_root)?;
         let mut versions = Map::new();
-        for rel in self.m.strings("files") {
-            let path = join_rel(&game, &rel);
-            let key = dir_key(&rel);
+        let files = self.m.strings("files");
+        let read_before = cx.project.meta().extracted_at.is_some();
+        let keys = work_keys(&files, self.m.details.get("work_keys").and_then(Value::as_object), read_before);
+        self.m.set("work_keys", Value::Object(keys));
+        // While a patch is installed the game's file is our English: read the
+        // original from its backup instead.
+        let inst = Installer::new(cx.project);
+        for rel in files {
+            let path = inst.original(&game, &rel)?;
+            if path != join_rel(&game, &rel) {
+                cx.log(format!("{rel} is patched: reading the original from the backup"));
+            }
+            let key = self.key(&rel);
             let dst = src_root.join(&key);
             if prof.id == "yuris" {
                 match ypf_version(&path) {
@@ -436,7 +511,7 @@ impl Engine for MsgToolEngine {
         clean_dir(&out)?;
         let manual = cx.project.work("manual");
         for rel in self.m.strings("files") {
-            let key = dir_key(&rel);
+            let key = self.key(&rel);
             let src = src_root.join(&key);
             let json_dir = cx.project.work("json_tl").join(&key);
             if !json_dir.is_dir() {
@@ -444,7 +519,24 @@ impl Engine for MsgToolEngine {
             }
             let patched = cx.project.work("patched").join(&key);
             clean_dir(&patched)?;
-            msgtool::import(cx, &src, &json_dir, &patched, prof.script_type)?;
+            // Import only the scripts that have text. An archive also holds
+            // images, sounds and other data msg-tool can't import; those go
+            // into the rebuilt archive byte for byte from the original.
+            let scripts = scripts_with_json(&src, &json_dir);
+            if scripts.is_empty() {
+                continue;
+            }
+            let only = cx.project.work("import").join(&key);
+            clean_dir(&only)?;
+            for f in &scripts {
+                let to = super::safe_join(&only, f)?;
+                fs::create_dir_all(to.parent().unwrap())?;
+                fs::copy(join_rel(&src, f), to)?;
+            }
+            msgtool::import(cx, &only, &json_dir, &patched, prof.script_type)?;
+            if let Some(f) = scripts.iter().find(|f| !join_rel(&patched, f).is_file()) {
+                return user(format!("msg-tool didn't write the translated {f} (from {rel})."));
+            }
             if prof.id == "favorite" {
                 self.verify_favorite(cx, &rel, &src, &patched)?;
             }

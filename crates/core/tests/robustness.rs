@@ -191,8 +191,10 @@ fn name_only_lines_use_the_glossary_name() {
     assert_eq!(lines[1].skip, SPEAKER_SKIP);
     pipe.translate(None, false).unwrap();
     pipe.build().unwrap();
-    let out: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(pipe.p.work("json_tl/data_pfs/a.json")).unwrap()).unwrap();
+    let out: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(pipe.p.work(&format!("json_tl/{}/a.json", generic::dir_key("data.pfs")))).unwrap(),
+    )
+    .unwrap();
     assert_eq!(out[0]["name"], "Sakura");
     assert_eq!(out[1]["message"], "Sakura");
 }

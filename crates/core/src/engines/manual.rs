@@ -8,7 +8,7 @@
 //! If the folder is inside the game, the patched files are installed back in
 //! place (with backups). Otherwise they're written to an output folder.
 
-use super::{clean_dir, copy_tree, join_rel, list_files, msgtool, run_tool, Ctx, Engine, Match};
+use super::{clean_dir, copy_tree, join_rel, list_files, msgtool, run_tool, safe_join, Ctx, Engine, Installer, Match};
 use crate::error::{user, Result};
 use crate::project::{abs_path, path_within};
 use serde_json::{Map, Value};
@@ -66,6 +66,15 @@ pub fn for_folder(folder: &str, game_dir: &Path) -> Match {
     Match::new("scripts", &name, 0.5, d, if inside { "auto" } else { "manual" }, "")
 }
 
+/// `folder` relative to `game` (empty when they're the same folder).
+fn rel_base(folder: &Path, game: &Path) -> PathBuf {
+    folder.strip_prefix(game).map(Path::to_path_buf).unwrap_or_else(|_| {
+        // Same folder spelled differently (case on Windows): compare by components.
+        let n = game.components().count();
+        folder.components().skip(n).collect()
+    })
+}
+
 pub struct ScriptFolder {
     pub m: Match,
 }
@@ -102,7 +111,26 @@ impl Engine for ScriptFolder {
         }
         let src = cx.project.work("scripts");
         clean_dir(&src)?;
-        copy_tree(&folder, &src)?;
+        // Inside the game, installed files are our English: read originals
+        // from their backups instead.
+        let base = self.m.flag("inside_game").then(|| rel_base(&folder, &cx.game()));
+        let inst = Installer::new(cx.project);
+        for f in &files {
+            let from = match &base {
+                Some(b) => {
+                    let b = b.to_string_lossy().replace('\\', "/");
+                    let rel = if b.is_empty() { f.clone() } else { format!("{b}/{f}") };
+                    if inst.manifest.added.contains(&rel) {
+                        continue; // ours, not the game's
+                    }
+                    inst.original(&cx.game(), &rel)?
+                }
+                None => join_rel(&folder, f),
+            };
+            let to = safe_join(&src, f)?;
+            fs::create_dir_all(to.parent().unwrap())?;
+            fs::copy(from, to)?;
+        }
         let json_dir = cx.project.work("json");
         clean_dir(&json_dir)?;
         let mut backend = None;
@@ -167,13 +195,7 @@ impl Engine for ScriptFolder {
         clean_dir(&out)?;
         let folder = self.folder().unwrap_or_default();
         if self.m.flag("inside_game") {
-            let game = cx.game();
-            let rel_base = folder.strip_prefix(&game).map(Path::to_path_buf).unwrap_or_else(|_| {
-                // Same folder spelled differently (case on Windows): compare by components.
-                let n = game.components().count();
-                folder.components().skip(n).collect()
-            });
-            copy_tree(&patched, &out.join(rel_base))?;
+            copy_tree(&patched, &out.join(rel_base(&folder, &cx.game())))?;
         } else {
             self.m.set("manual_output", patched.to_string_lossy().to_string());
         }

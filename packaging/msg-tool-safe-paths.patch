@@ -1,0 +1,31 @@
+diff --git a/src/main.rs b/src/main.rs
+index af4a768..430b48d 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -18,14 +18,18 @@ fn escape_dep_string(s: &str) -> String {
+ /// Game archives created on Windows may embed `\` as path separator, which is
+ /// not recognized on Unix and would produce flat filenames instead of directories.
+ fn normalize_archive_filename<'a>(name: &'a str) -> std::borrow::Cow<'a, std::path::Path> {
+-    #[cfg(not(windows))]
+-    {
+-        std::borrow::Cow::Owned(std::path::PathBuf::from(name.replace('\\', "/")))
+-    }
+-    #[cfg(windows)]
+-    {
+-        std::borrow::Cow::Borrowed(name.as_ref())
+-    }
++    // Yakusu: an entry name comes from the archive, so it must never point
++    // outside the output folder. Both separators split, roots and drive
++    // letters are dropped, and parent components become "__".
++    let mut path = std::path::PathBuf::new();
++    for part in name.split(['/', '\\']) {
++        match part {
++            "" | "." => {}
++            ".." => path.push("__"),
++            p => path.push(p.replace(':', "_")),
++        }
++    }
++    std::borrow::Cow::Owned(path)
+ }
+ 
+ fn get_encoding(

@@ -9,7 +9,7 @@ use crate::error::{user, Error, Result};
 use crate::llm::{self, ClientFactory, Llm, LlmError};
 use crate::project::{now, Line, Project, ResultRow, Stats, Term};
 use crate::prompts;
-use crate::protect::{check, has_japanese, protect, restore, Protected};
+use crate::protect::{check, foreign_codes, has_japanese, invented_codes, protect, restore, Protected};
 use crate::textfit::{self, TextBox};
 use indexmap::IndexMap;
 use regex::Regex;
@@ -119,6 +119,8 @@ pub struct Note {
 pub struct BuildResult {
     pub out: String,
     pub applied: usize,
+    /// Translated lines left in Japanese because they failed the final check.
+    pub blocked: usize,
     pub manual_output: Option<String>,
 }
 
@@ -173,6 +175,8 @@ pub struct Pipeline {
     pub progress: ProgressFn,
     pub cancel: Arc<AtomicBool>,
     pub factory: ClientFactory,
+    /// Worst-case cost of model calls in flight (see `reserve`).
+    reserved: Mutex<f64>,
 }
 
 impl Pipeline {
@@ -185,6 +189,7 @@ impl Pipeline {
             progress: Arc::new(|_| {}),
             cancel: Arc::new(AtomicBool::new(false)),
             factory,
+            reserved: Mutex::new(0.0),
         }
     }
 
@@ -242,7 +247,69 @@ impl Pipeline {
     }
 
     // ------------------------------------------------------------ extract
+    /// Read the game's scripts into the project.
+    ///
+    /// The work folders from the previous read are set aside first and come
+    /// back if anything fails, so a failed re-read (wrong decryption profile,
+    /// a patch in the way, a damaged archive) never leaves the project worse
+    /// than it was. Lines are replaced only after everything succeeded.
     pub fn extract(&self) -> Result<Stats> {
+        const DIRS: &[&str] = &["scripts", "scripts_scn", "json", "unpack"];
+        let stash = self.p.work("previous-read");
+        if stash.is_dir() {
+            // Left by a read that was interrupted: those folders are the last good ones.
+            self.unstash(&stash, DIRS)?;
+        }
+        std::fs::create_dir_all(&stash)?;
+        for d in DIRS {
+            let p = self.p.work(d);
+            if p.exists() {
+                std::fs::rename(&p, stash.join(d))?;
+            }
+        }
+        let engine_before = self.p.meta().engine.clone();
+        match self.read_scripts() {
+            Ok((stats, lines, measured)) => {
+                let _ = std::fs::remove_dir_all(&stash);
+                self.p.set_lines(lines)?;
+                let st = stats.clone();
+                self.p.update_meta(move |m| {
+                    if !m.text_box.as_ref().map(|b| b.user_set).unwrap_or(false) {
+                        m.text_box = Some(measured);
+                    }
+                    m.stats = Some(st);
+                    m.extracted_at = Some(now());
+                })?;
+                self.log(format!("Found {} lines of text in {} files.", fmt_n(stats.lines), stats.files));
+                Ok(stats)
+            }
+            Err(e) => {
+                if let Err(u) = self.unstash(&stash, DIRS) {
+                    self.log(format!("Couldn't put the previous work folders back: {u}"));
+                }
+                let _ = self.p.update_meta(|m| m.engine = engine_before);
+                Err(e)
+            }
+        }
+    }
+
+    /// Put work folders set aside by `extract` back in place.
+    fn unstash(&self, stash: &std::path::Path, dirs: &[&str]) -> Result<()> {
+        for d in dirs {
+            let p = self.p.work(d);
+            if p.exists() {
+                std::fs::remove_dir_all(&p)?;
+            }
+            let s = stash.join(d);
+            if s.exists() {
+                std::fs::rename(&s, &p)?;
+            }
+        }
+        std::fs::remove_dir_all(stash)?;
+        Ok(())
+    }
+
+    fn read_scripts(&self) -> Result<(Stats, Vec<Line>, TextBox)> {
         let mut eng = self.engine()?;
         self.prog("extract", 0, 0, "Reading the game's scripts");
         let json_dir = eng.prepare(&self.cx())?;
@@ -305,17 +372,7 @@ impl Pipeline {
             jp_chars: live.iter().map(|l| self.prot(&*eng, l).text.chars().count()).sum(),
             speakers: sp,
         };
-        self.p.set_lines(lines)?;
-        let st = stats.clone();
-        self.p.update_meta(move |m| {
-            if !m.text_box.as_ref().map(|b| b.user_set).unwrap_or(false) {
-                m.text_box = Some(measured);
-            }
-            m.stats = Some(st);
-            m.extracted_at = Some(now());
-        })?;
-        self.log(format!("Found {} lines of text in {} files.", fmt_n(stats.lines), stats.files));
-        Ok(stats)
+        Ok((stats, lines, measured))
     }
 
     // ------------------------------------------------------------ helpers
@@ -339,33 +396,72 @@ impl Pipeline {
         }
     }
 
-    fn check_budget(&self) -> Result<()> {
+    /// USD per million tokens (input, output, cache write, cache read): the
+    /// built-in Claude prices, else what the user entered for the model.
+    /// For a user price the cache rates are taken as the full input rate, so
+    /// spending is never undercounted. Local models are free.
+    pub fn price(&self, model: &str) -> Option<[f64; 4]> {
+        if self.s.provider == "local" {
+            return Some([0.0; 4]);
+        }
+        llm::price_of(model).or_else(|| self.s.prices.get(model).map(|p| [p[0], p[1], p[0], p[0]]))
+    }
+
+    /// Reserve the most a call could cost before making it, so parallel
+    /// calls together can't push spending past the limit. Returns the amount
+    /// reserved; release it with [`Pipeline::release`] once the call is done.
+    fn reserve(&self, model: &str, system: &str, user_msg: &str, max_tokens: u32) -> Result<f64> {
         let cap = self.s.budget_usd;
-        if cap > 0.0 && self.p.spent_total() >= cap {
+        if cap <= 0.0 {
+            return Ok(0.0);
+        }
+        let Some(p) = self.price(model) else {
             return Err(Error::Budget(format!(
-                "Stopped at your ${cap:.2} spending limit. Raise it in Settings to continue."
+                "Yakusu doesn't know what {model} costs, so it can't keep this run under your ${cap:.2} spending \
+                 limit. Enter the model's price in Settings (next to the model name), or clear the spending limit \
+                 to run without one."
+            )));
+        };
+        // Generous upper bound: ~3 bytes per input token, every output token used.
+        let input_tokens = (system.len() + user_msg.len()) as f64 / 3.0;
+        let worst = (input_tokens * p[0].max(p[2]) + max_tokens as f64 * p[1]) / 1e6;
+        let mut reserved = self.reserved.lock().unwrap();
+        let spent = self.p.spent_total();
+        if spent + *reserved + worst > cap {
+            return Err(Error::Budget(format!(
+                "Stopped at your ${cap:.2} spending limit (spent ${spent:.4}; the next request could cost up to \
+                 ${worst:.4}). Raise it in Settings to continue. Progress is kept."
             )));
         }
-        Ok(())
+        *reserved += worst;
+        Ok(worst)
+    }
+
+    fn release(&self, amount: f64) {
+        if amount > 0.0 {
+            let mut r = self.reserved.lock().unwrap();
+            *r = (*r - amount).max(0.0);
+        }
     }
 
     fn call(&self, client: &dyn Llm, stage: &str, system: &str, user_msg: &str, max_tokens: u32) -> Result<String> {
         if self.cancel.load(Ordering::SeqCst) {
             return Err(Error::Cancelled);
         }
-        self.check_budget()?;
-        match client.complete(system, user_msg, max_tokens, &self.cancel) {
-            Ok(c) => {
-                self.p.log_cost(stage, client.model(), &c.usage, c.usd)?;
-                Ok(c.text)
-            }
+        let model = client.model().to_string();
+        let held = self.reserve(&model, system, user_msg, max_tokens)?;
+        let result = client.complete(system, user_msg, max_tokens, &self.cancel);
+        let cost = |u: &llm::Usage| self.price(&model).map(|p| llm::cost_at(&p, u)).unwrap_or(0.0);
+        let out = match result {
+            Ok(c) => self.p.log_cost(stage, &model, &c.usage, cost(&c.usage)).map(|_| c.text).map_err(Error::from),
             Err(LlmError::Truncated(u)) => {
-                self.p.log_cost(stage, client.model(), &u, llm::cost_usd(client.model(), &u))?;
-                Err(Error::Truncated)
+                self.p.log_cost(stage, &model, &u, cost(&u)).map_err(Error::from).and(Err(Error::Truncated))
             }
             Err(LlmError::Fatal(_)) if self.cancel.load(Ordering::SeqCst) => Err(Error::Cancelled),
             Err(LlmError::Fatal(m)) => Err(Error::Llm(m)),
-        }
+        };
+        self.release(held);
+        out
     }
 
     /// A model call whose reply should be a JSON array. `Ok(None)` when the
@@ -417,7 +513,7 @@ impl Pipeline {
         let tr_in = chars * 1.3 + n * 22.0 + (ctx / bs) * (chars * 1.3 + chars * 0.6 + n * 25.0);
         let tr_out = chars * 0.62 + n * 12.0;
         let cost = |model: &str, tin: f64, tout: f64, sys_reads: f64| -> Option<f64> {
-            let p = llm::price_of(model)?;
+            let p = self.price(model)?;
             Some((tin * p[0] + tout * p[1] + sys_reads * sys_tokens * p[3] + sys_tokens * p[2]) / 1e6)
         };
         let r4 = |x: f64| (x * 1e4).round() / 1e4;
@@ -900,7 +996,13 @@ impl Pipeline {
             q if q == "curly" || (q == "auto" && !straight) => Some(("\u{201c}", "\u{201d}")),
             _ => Some(("\"", "\"")),
         };
-        let en_name = pr.name_prefix.as_ref().and_then(|(_, jp, _)| rc.names.get(jp)).filter(|n| !n.is_empty());
+        // A glossary name is written into the script as-is: one carrying
+        // engine syntax or control characters falls back to the Japanese.
+        let en_name = pr
+            .name_prefix
+            .as_ref()
+            .and_then(|(_, jp, _)| rc.names.get(jp))
+            .filter(|n| !n.is_empty() && invented_codes(n).is_empty() && !n.chars().any(char::is_control));
         let text = restore(&pr, &r.en_ph, quotes, en_name.map(String::as_str));
         let text = textfit::normalize_encoding(&text, &rc.eng.encoding(), straight && rc.quotes == "auto");
         textfit::fit(&text, &rc.text_box, lb, rc.insert_breaks)
@@ -1137,6 +1239,16 @@ impl Pipeline {
         }
         let est = self.estimate();
         let cap = self.s.budget_usd;
+        let (tm, rm) = self.models();
+        let unpriced: Vec<String> =
+            std::iter::once(tm).chain(rm).filter(|m| !m.is_empty() && self.price(m).is_none()).collect();
+        if cap > 0.0 && !unpriced.is_empty() {
+            notes.push(warn(format!(
+                "Yakusu doesn't know what {} costs, so your ${cap:.2} spending limit can't be enforced and the run \
+                 will stop before it starts. Enter the price in Settings, or clear the limit.",
+                unpriced.join(" and ")
+            )));
+        }
         if cap > 0.0 {
             if let (Some(lo), Some(spent)) = (est.pointer("/total/0").and_then(Value::as_f64), est["spent"].as_f64()) {
                 if lo + spent > cap {
@@ -1161,10 +1273,14 @@ impl Pipeline {
         let by_id: HashMap<&str, &Line> = all.iter().map(|l| (l.id.as_str(), l)).collect();
         let enc = rc.eng.encoding();
         let sq = rc.eng.straight_quotes();
+        // A name goes into the script as-is, so it may not carry engine syntax.
+        let safe_name = |e: &str| invented_codes(e).is_empty() && !e.chars().any(char::is_control);
         let name_en = |n: &str| -> Option<String> {
-            rc.names.get(n).filter(|e| !e.is_empty()).map(|e| textfit::normalize_encoding(e, &enc, sq))
+            rc.names.get(n).filter(|e| !e.is_empty() && safe_name(e)).map(|e| textfit::normalize_encoding(e, &enc, sq))
         };
         let mut applied = 0usize;
+        // Lines whose translation can't be written safely stay in Japanese.
+        let mut blocked: Vec<(String, String)> = Vec::new();
         self.prog("build", 0, 0, "Writing the translation into the scripts");
         for rel in list_files(&src, Some(&[".json"])) {
             let mut entries = read_json_messages(&engines::join_rel(&src, &rel))?;
@@ -1174,15 +1290,30 @@ impl Pipeline {
                     let line = by_id.get(lid.as_str()).filter(|l| l.jp == e.message);
                     if let (Some(l), Some(r)) = (line, res.get(&lid)) {
                         if r.translated() && l.skip.is_empty() && r.src.as_deref().unwrap_or(&l.jp) == l.jp {
-                            e.message = self.render(&rc, l, r).0;
-                            applied += 1;
+                            // Check again here, whatever was stored: this is the
+                            // last step before the text becomes game script.
+                            let lb = rc.eng.line_break_for(&l.file);
+                            let pr = protect(&l.jp, lb);
+                            let mut why: Vec<String> =
+                                check(&pr, Some(&r.en_ph)).into_iter().filter(|x| x != "still has Japanese").collect();
+                            let text = self.render(&rc, l, r).0;
+                            let foreign = foreign_codes(&pr, &text, lb);
+                            if why.is_empty() && !foreign.is_empty() {
+                                why.push(format!("would add engine code {}", foreign.join(" ")));
+                            }
+                            if why.is_empty() {
+                                e.message = text;
+                                applied += 1;
+                            } else {
+                                blocked.push((lid.clone(), why.join("; ")));
+                            }
                         }
                     }
                     if let Some(l) = line.filter(|l| l.skip == SPEAKER_SKIP) {
                         // The same English as every name box using this string.
                         let lb = rc.eng.line_break_for(&l.file);
                         let pr = protect(&l.jp, lb);
-                        if let Some(en) = rc.names.get(pr.text.trim()).filter(|n| !n.is_empty()) {
+                        if let Some(en) = rc.names.get(pr.text.trim()).filter(|n| !n.is_empty() && safe_name(n)) {
                             let text = restore(&pr, en, None, None);
                             e.message = textfit::normalize_encoding(&text, &enc, sq);
                         }
@@ -1199,7 +1330,24 @@ impl Pipeline {
             });
             write_json_messages(&engines::join_rel(&dst, &rel), &entries)?;
         }
+        if !blocked.is_empty() {
+            self.log(format!(
+                "Left {} line{} in Japanese because the translation would break the game's codes. Fix them in Proofread:",
+                fmt_n(blocked.len()),
+                if blocked.len() == 1 { "" } else { "s" }
+            ));
+            for (id, why) in blocked.iter().take(20) {
+                self.log(format!("  {id}: {why}"));
+            }
+        }
         if applied == 0 {
+            if !blocked.is_empty() {
+                return user(format!(
+                    "None of the translated lines can be written safely ({} have code problems, listed in Activity). \
+                     Fix or retranslate them in Proofread, then build again.",
+                    fmt_n(blocked.len())
+                ));
+            }
             return user("No translated lines yet. Translate a few lines first.");
         }
         let mut eng = rc.eng;
@@ -1213,6 +1361,7 @@ impl Pipeline {
         Ok(BuildResult {
             out: out.to_string_lossy().to_string(),
             applied,
+            blocked: blocked.len(),
             manual_output: eng.m().str("manual_output").map(String::from),
         })
     }

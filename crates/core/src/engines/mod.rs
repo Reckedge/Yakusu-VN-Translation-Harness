@@ -23,6 +23,7 @@ use crate::error::{user, Error, Result};
 use crate::project::{now, Project};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -177,13 +178,91 @@ pub fn engine_for(m: &Match) -> Result<Box<dyn Engine>> {
 
 // ---------------------------------------------------------------- files
 
-/// `root/a/b.txt` for rel "a/b.txt".
+/// `root/a/b.txt` for rel "a/b.txt", for paths Yakusu produced itself.
+///
+/// Never leaves `root`: "..", "." and drive-like parts are dropped. Names
+/// that come from outside (archives, tools, the manifest) go through
+/// [`safe_join`] instead, which refuses them rather than rewriting them.
 pub fn join_rel(root: &Path, rel: &str) -> PathBuf {
     let mut p = root.to_path_buf();
-    for part in rel.split(['/', '\\']).filter(|s| !s.is_empty()) {
+    for part in rel.split(['/', '\\']) {
+        if part.is_empty() || part == "." || part == ".." || part.contains(':') {
+            continue;
+        }
         p.push(part);
     }
     p
+}
+
+/// Check a relative file name that came from outside Yakusu and return it
+/// '/'-separated. Both slashes count as separators. Refused: empty names,
+/// absolute paths, "." / "..", drive letters and streams (":"), Windows
+/// device names (CON, NUL, COM1 ...), characters Windows can't store, and
+/// parts ending in a dot or space (Windows silently drops those).
+pub fn safe_rel(rel: &str) -> Result<String> {
+    let bad = |why: &str| -> Result<String> {
+        Err(Error::User(format!("Refusing the unsafe file name \"{}\" ({why}).", rel.escape_debug())))
+    };
+    if rel.chars().any(|c| (c as u32) < 0x20) {
+        return bad("control characters");
+    }
+    let norm = rel.replace('\\', "/");
+    if norm.starts_with('/') {
+        return bad("absolute path");
+    }
+    let mut parts = Vec::new();
+    for part in norm.split('/') {
+        if part.is_empty() {
+            continue;
+        }
+        if part == ".." {
+            return bad("points to a parent folder");
+        }
+        if part == "." {
+            return bad("a \".\" folder");
+        }
+        if part.contains(':') {
+            return bad("drive letter or stream");
+        }
+        if part.chars().any(|c| "<>\"|?*".contains(c)) {
+            return bad("characters Windows can't use");
+        }
+        if part.ends_with('.') || part.ends_with(' ') {
+            return bad("ends with a dot or space");
+        }
+        let stem = part.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+                && stem.len() == 4
+                && stem.as_bytes()[3].is_ascii_digit());
+        if device {
+            return bad("Windows device name");
+        }
+        parts.push(part);
+    }
+    if parts.is_empty() {
+        return bad("empty");
+    }
+    Ok(parts.join("/"))
+}
+
+/// `root` joined with an untrusted relative name, after [`safe_rel`].
+///
+/// Also refuses a path that runs through a symlink or junction under `root`
+/// (including the file itself), so writes can't be redirected elsewhere.
+pub fn safe_join(root: &Path, rel: &str) -> Result<PathBuf> {
+    let rel = safe_rel(rel)?;
+    let mut p = root.to_path_buf();
+    for part in rel.split('/') {
+        p.push(part);
+        if fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(Error::User(format!(
+                "Refusing to follow the link at {}: Yakusu only writes real files inside the folder.",
+                p.display()
+            )));
+        }
+    }
+    Ok(p)
 }
 
 fn ext_of(name: &str) -> String {
@@ -194,6 +273,8 @@ fn ext_of(name: &str) -> String {
 }
 
 /// Files under root, as '/'-separated relative paths, sorted case-insensitively.
+/// Symlinks are skipped (neither followed nor listed): everything listed is a
+/// real file inside `root`.
 pub fn list_files(root: &Path, exts: Option<&[&str]>) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![(root.to_path_buf(), String::new())];
@@ -203,9 +284,12 @@ pub fn list_files(root: &Path, exts: Option<&[&str]>) -> Vec<String> {
             let name = e.file_name().to_string_lossy().to_string();
             let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
             let Ok(ft) = e.file_type() else { continue };
+            if ft.is_symlink() {
+                continue;
+            }
             if ft.is_dir() {
                 stack.push((e.path(), rel));
-            } else if exts.is_none_or(|x| x.contains(&ext_of(&name).as_str())) {
+            } else if ft.is_file() && exts.is_none_or(|x| x.contains(&ext_of(&name).as_str())) {
                 out.push(rel);
             }
         }
@@ -255,7 +339,7 @@ pub fn clean_dir(path: &Path) -> Result<()> {
 /// Recursively copy `src` into `dst` (merging, overwriting files).
 pub fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
     for rel in list_files(src, None) {
-        let to = join_rel(dst, &rel);
+        let to = safe_join(dst, &rel)?;
         if let Some(d) = to.parent() {
             fs::create_dir_all(d)?;
         }
@@ -302,26 +386,111 @@ pub struct Manifest {
     pub replaced: Vec<String>,
     pub added: Vec<String>,
     pub installed_at: Option<f64>,
+    /// SHA-1 of each original's backup, so Restore can tell a damaged backup.
+    pub backup_sha1: BTreeMap<String, String>,
 }
 
 /// Copies staged files into the game and remembers how to undo it.
 ///
 /// The manifest (in the project folder) lists every file we added and every
 /// original we replaced, with a backup copy of each original. Restore puts
-/// originals back and deletes what we added. Originals are backed up once,
-/// the first time they're replaced, so repeated installs never back up a
-/// patched file by mistake.
+/// originals back and deletes what we added.
+///
+/// Rules that keep the originals safe:
+/// - an existing backup is never overwritten: it's the only copy of the
+///   original once the game file has been replaced;
+/// - a manifest that exists but can't be read stops installs (fail closed);
+///   Restore then recovers from the backups themselves;
+/// - Restore checks every backup before touching the game and only forgets
+///   entries it actually restored;
+/// - files are written through a fresh, exclusively created temporary file
+///   in the same folder, then renamed into place.
 pub struct Installer {
     path: PathBuf,
     backup: PathBuf,
     pub manifest: Manifest,
+    damaged: Option<String>,
+}
+
+fn denied(e: std::io::Error) -> Error {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        Error::User("Windows won't let Yakusu change the game's files. Close the game (and anything else using its files), then try again.".into())
+    } else {
+        e.into()
+    }
+}
+
+/// Create a new, uniquely named temporary file next to `dst`. Exclusive
+/// creation: an existing file (or symlink) with that name is never opened.
+fn create_temp(dst: &Path) -> std::io::Result<(PathBuf, fs::File)> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let dir = dst.parent().unwrap_or(Path::new("."));
+    let name = dst.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    for _ in 0..64 {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let tmp = dir.join(format!(".{name}.{:x}-{nanos:x}-{n:x}.yakusu-tmp", std::process::id()));
+        match fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(f) => return Ok((tmp, f)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "couldn't create a temporary file"))
+}
+
+/// Replace `dst` with a copy of `src` atomically (through a fresh temp file).
+pub fn atomic_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let mut input = fs::File::open(src)?;
+    let (tmp, mut out) = create_temp(dst)?;
+    let r = std::io::copy(&mut input, &mut out).and_then(|_| out.sync_all());
+    drop(out);
+    let r = r.and_then(|_| fs::rename(&tmp, dst));
+    if r.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    r
+}
+
+pub fn sha1_file(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut f = fs::File::open(path)?;
+    let mut h = sha1_smol::Sha1::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(h.digest().to_string())
+}
+
+fn same_contents(a: &Path, b: &Path) -> std::io::Result<bool> {
+    if fs::metadata(a)?.len() != fs::metadata(b)?.len() {
+        return Ok(false);
+    }
+    Ok(sha1_file(a)? == sha1_file(b)?)
 }
 
 impl Installer {
     pub fn new(p: &Project) -> Installer {
         let path = p.path("install.json");
-        let manifest = fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        Installer { path, backup: p.path("backup"), manifest }
+        let (manifest, damaged) = match fs::read(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Manifest::default(), None),
+            Err(e) => (Manifest::default(), Some(e.to_string())),
+            Ok(bytes) => match serde_json::from_slice::<Manifest>(&bytes) {
+                Err(e) => (Manifest::default(), Some(e.to_string())),
+                Ok(m) => match m.replaced.iter().chain(&m.added).find(|r| safe_rel(r).is_err()) {
+                    Some(r) => (Manifest::default(), Some(format!("it lists the unsafe path {r:?}"))),
+                    None => (m, None),
+                },
+            },
+        };
+        Installer { path, backup: p.path("backup"), manifest, damaged }
     }
 
     fn save(&self) -> Result<()> {
@@ -329,8 +498,14 @@ impl Installer {
         Ok(())
     }
 
+    /// The install record exists but couldn't be read.
+    pub fn damaged(&self) -> bool {
+        self.damaged.is_some()
+    }
+
+    /// Something may be installed (a damaged record counts: Restore recovers it).
     pub fn installed(&self) -> bool {
-        !self.manifest.replaced.is_empty() || !self.manifest.added.is_empty()
+        self.damaged.is_some() || !self.manifest.replaced.is_empty() || !self.manifest.added.is_empty()
     }
 
     /// Copy `src` into the game at `rel`.
@@ -340,66 +515,203 @@ impl Installer {
     /// anything fails after that, Restore still knows about the file; if the
     /// manifest can't be saved, the game file is never replaced.
     pub fn put(&mut self, src: &Path, rel: &str, game: &Path) -> Result<()> {
-        let dst = join_rel(game, rel);
-        let known = self.manifest.replaced.iter().chain(&self.manifest.added).any(|r| r == rel);
+        if let Some(why) = &self.damaged {
+            return user(format!(
+                "Yakusu's install record for this game ({}) is damaged ({why}), so installing could overwrite \
+                 the backup of an original file. Nothing was changed. Use Restore first: it puts the originals \
+                 back from the backups.",
+                self.path.display()
+            ));
+        }
+        let rel = safe_rel(rel)?;
+        let dst = safe_join(game, &rel)?;
+        let known = self.manifest.replaced.iter().chain(&self.manifest.added).any(|r| *r == rel);
         if !known {
             if dst.exists() {
-                let bak = join_rel(&self.backup, rel);
-                fs::create_dir_all(bak.parent().unwrap())?;
-                let tmp = bak.with_file_name(format!("{}.part", bak.file_name().unwrap().to_string_lossy()));
-                fs::copy(&dst, &tmp)?;
-                fs::rename(&tmp, &bak)?;
-                self.manifest.replaced.push(rel.to_string());
+                let bak = safe_join(&self.backup, &rel)?;
+                if bak.exists() {
+                    // Left from an earlier install the record no longer lists.
+                    // Reuse it only if it's exactly the game's current file.
+                    if !same_contents(&bak, &dst)? {
+                        return user(format!(
+                            "There's already a backup of {rel} that doesn't match the game's current file, and \
+                             Yakusu's install record doesn't mention it. Nothing was changed, so the backup stays \
+                             safe. If the game was updated after an earlier restore, delete {} and try again.",
+                            bak.display()
+                        ));
+                    }
+                } else {
+                    fs::create_dir_all(bak.parent().unwrap())?;
+                    atomic_copy(&dst, &bak)?;
+                }
+                self.manifest.backup_sha1.insert(rel.clone(), sha1_file(&bak)?);
+                self.manifest.replaced.push(rel.clone());
             } else {
-                self.manifest.added.push(rel.to_string());
+                self.manifest.added.push(rel.clone());
             }
             if let Err(e) = self.save() {
                 // Nothing in the game has changed yet: forget the intent.
-                self.manifest.replaced.retain(|r| r != rel);
-                self.manifest.added.retain(|r| r != rel);
+                self.manifest.replaced.retain(|r| *r != rel);
+                self.manifest.added.retain(|r| *r != rel);
+                self.manifest.backup_sha1.remove(&rel);
                 return Err(e);
             }
         }
         fs::create_dir_all(dst.parent().unwrap())?;
-        let tmp = dst.with_file_name(format!("{}.yakusu-tmp", dst.file_name().unwrap().to_string_lossy()));
-        let r = fs::copy(src, &tmp).and_then(|_| fs::rename(&tmp, &dst));
-        if let Err(e) = r {
-            let _ = fs::remove_file(&tmp);
+        atomic_copy(src, &dst).map_err(|e| {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                return user(format!(
+                Error::User(format!(
                     "Windows won't let Yakusu replace {rel}. Close the game (and anything else using its files), then try again."
-                ));
+                ))
+            } else {
+                e.into()
             }
-            return Err(e.into());
-        }
+        })?;
         self.manifest.installed_at = Some(now());
         self.save()
     }
 
-    pub fn restore(&mut self, game: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<()> {
-        let denied = |e: std::io::Error| -> Error {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                Error::User("Windows won't let Yakusu change the game's files. Close the game, then try again.".into())
-            } else {
-                e.into()
+    /// Where the game's original `rel` is now: its backup while our version
+    /// is installed over it, else the game's own file. Reading the game again
+    /// while a patch is installed must never read our English as the source.
+    pub fn original(&self, game: &Path, rel: &str) -> Result<PathBuf> {
+        if let Some(why) = &self.damaged {
+            return user(format!(
+                "Yakusu's install record is damaged ({why}), so it can't tell which game files are originals. \
+                 Use Restore first, then read the scripts again."
+            ));
+        }
+        let norm = rel.replace('\\', "/");
+        if self.manifest.replaced.contains(&norm) {
+            if let Some(problem) = self.backup_problem(&norm) {
+                return user(format!("{problem}. Restore or verify the game's files, then read the scripts again."));
             }
+            return safe_join(&self.backup, &norm);
+        }
+        if self.manifest.added.contains(&norm) {
+            return user(format!("{rel} was added by Yakusu's patch; it isn't one of the game's files."));
+        }
+        // Only read here, so links inside the game folder are fine.
+        Ok(join_rel(game, &safe_rel(&norm)?))
+    }
+
+    /// Why a backup can't be used, if it can't.
+    fn backup_problem(&self, rel: &str) -> Option<String> {
+        let bak = match safe_join(&self.backup, rel) {
+            Ok(b) => b,
+            Err(e) => return Some(e.to_string()),
         };
+        if !bak.is_file() {
+            return Some(format!("{rel}: the backup of the original is missing ({})", bak.display()));
+        }
+        if let Some(want) = self.manifest.backup_sha1.get(rel) {
+            match sha1_file(&bak) {
+                Ok(got) if got == *want => {}
+                Ok(_) => return Some(format!("{rel}: the backup of the original has changed since it was made")),
+                Err(e) => return Some(format!("{rel}: the backup can't be read ({e})")),
+            }
+        }
+        None
+    }
+
+    pub fn restore(&mut self, game: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<()> {
+        if self.damaged.is_some() {
+            return self.recover(game, log);
+        }
+        // Check everything before touching the game.
+        let problems: Vec<String> = self.manifest.replaced.iter().filter_map(|r| self.backup_problem(r)).collect();
+        if !problems.is_empty() {
+            return user(format!(
+                "Restore stopped before changing anything:\n{}\nThe game still has Yakusu's files. To get the \
+                 originals back, verify the game's files in its store (Steam: Properties > Installed Files > \
+                 Verify integrity) or reinstall it.",
+                problems.join("\n")
+            ));
+        }
         for rel in self.manifest.added.clone() {
-            let p = join_rel(game, &rel);
+            let p = safe_join(game, &rel)?;
             if p.exists() {
                 fs::remove_file(&p).map_err(denied)?;
                 log(&format!("Removed {rel}"));
             }
+            self.manifest.added.retain(|r| *r != rel);
+            self.save()?;
         }
         for rel in self.manifest.replaced.clone() {
-            let bak = join_rel(&self.backup, &rel);
-            if bak.exists() {
-                fs::copy(&bak, join_rel(game, &rel)).map_err(denied)?;
-                log(&format!("Restored {rel}"));
+            let bak = safe_join(&self.backup, &rel)?;
+            let dst = safe_join(game, &rel)?;
+            fs::create_dir_all(dst.parent().unwrap())?;
+            atomic_copy(&bak, &dst).map_err(denied)?;
+            if !same_contents(&bak, &dst)? {
+                return user(format!(
+                    "{rel} didn't come back identical to its backup. The backup is kept in {}.",
+                    bak.display()
+                ));
             }
+            log(&format!("Restored {rel}"));
+            self.manifest.replaced.retain(|r| *r != rel);
+            self.manifest.backup_sha1.remove(&rel);
+            self.save()?;
+            // The game has the original again; an old backup would only get
+            // in the way of the next install after a game update.
+            let _ = fs::remove_file(&bak);
         }
         self.manifest = Manifest::default();
         self.save()
+    }
+
+    /// Restore without a readable record: every file in the backup folder is
+    /// an original (backups are never overwritten), so put each one back.
+    fn recover(&mut self, game: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<()> {
+        let why = self.damaged.clone().unwrap_or_default();
+        log(&format!("The install record is damaged ({why}). Restoring every original from the backup folder."));
+        let backups: Vec<String> = list_files(&self.backup, None)
+            .into_iter()
+            .filter(|r| !r.ends_with(".yakusu-tmp") && !r.ends_with(".part"))
+            .collect();
+        for rel in &backups {
+            let bak = safe_join(&self.backup, rel)?;
+            let dst = safe_join(game, rel)?;
+            fs::create_dir_all(dst.parent().unwrap())?;
+            atomic_copy(&bak, &dst).map_err(denied)?;
+            if !same_contents(&bak, &dst)? {
+                return user(format!(
+                    "{rel} didn't come back identical to its backup. The backup is kept in {}.",
+                    bak.display()
+                ));
+            }
+            log(&format!("Restored {rel}"));
+        }
+        // Patches Yakusu built carry a marker file, so they can be found
+        // without the record.
+        let mut removed = 0;
+        if let Ok(rd) = fs::read_dir(game) {
+            for e in rd.flatten() {
+                let p = e.path();
+                let is_xp3 = p.extension().is_some_and(|x| x.eq_ignore_ascii_case("xp3"));
+                if is_xp3 && xp3::read_index(&p).is_ok_and(|ix| ix.iter().any(|x| x.name == kirikiri::PATCH_MARKER)) {
+                    fs::remove_file(&p).map_err(denied)?;
+                    log(&format!("Removed {}", e.file_name().to_string_lossy()));
+                    removed += 1;
+                }
+            }
+        }
+        let aside = self.path.with_file_name(format!("install.damaged-{}.json", now() as u64));
+        fs::rename(&self.path, &aside)?;
+        for rel in &backups {
+            let _ = fs::remove_file(join_rel(&self.backup, rel));
+        }
+        self.damaged = None;
+        self.manifest = Manifest::default();
+        self.save()?;
+        log(&format!(
+            "Restored {} original file(s) and removed {removed} Yakusu patch archive(s). Other files Yakusu \
+             added (for example version.dll) can't be identified without the record; the damaged record was \
+             kept as {}.",
+            backups.len(),
+            aside.display()
+        ));
+        Ok(())
     }
 }
 

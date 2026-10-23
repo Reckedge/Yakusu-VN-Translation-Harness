@@ -266,6 +266,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .affix { color: var(--ink-3); }
 .row-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.price-row { margin-top: 10px; display: grid; gap: 6px; }
+.price-row .two { gap: 10px; }
+.price-row .hint { margin: 0; }
 .spacer { flex: 1; }
 
 .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--field); border: 1px solid var(--rule); }

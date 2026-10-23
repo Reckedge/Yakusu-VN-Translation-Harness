@@ -71,6 +71,37 @@ pub fn decode(data: &[u8]) -> (String, &'static str) {
     (t.into_owned(), "cp932")
 }
 
+/// Decoded script text that is really noise: what a wrong decryption key or
+/// a damaged file gives. Two signals, either is enough:
+/// - control characters (other than tab / line breaks) or U+FFFD replacement
+///   characters in more than 2% of the text;
+/// - more than 10% of characters outside what a Japanese script is made of
+///   (ASCII, Latin-1, punctuation and symbols, kana, CJK, full-width forms).
+pub fn garbled(text: &str) -> bool {
+    let n = text.chars().count();
+    if n == 0 {
+        return false;
+    }
+    let broken = text.chars().filter(|c| (c.is_control() && !"\r\n\t".contains(*c)) || *c == '\u{FFFD}').count();
+    let odd = text
+        .chars()
+        .filter(|&c| {
+            !matches!(c as u32,
+                0x09 | 0x0A | 0x0D | 0x20..=0x7E | 0xA0..=0xFF
+                | 0x2000..=0x2BFF   // punctuation, arrows, maths, shapes, symbols
+                | 0x3000..=0x30FF   // CJK punctuation, hiragana, katakana
+                | 0x3200..=0x33FF   // enclosed CJK, CJK compatibility
+                | 0x3400..=0x4DBF   // CJK extension A
+                | 0x4E00..=0x9FFF   // CJK unified ideographs
+                | 0xF900..=0xFAFF   // CJK compatibility ideographs
+                | 0xFF00..=0xFFEF   // full-width and half-width forms
+                | 0x1F300..=0x1FAFF // emoji
+            )
+        })
+        .count();
+    broken > 3.max(n / 50) || odd > 8.max(n / 10)
+}
+
 pub fn encode(text: &str, label: &str) -> Vec<u8> {
     match label {
         "utf-16" => {

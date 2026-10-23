@@ -15,6 +15,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 pub const MAGIC: &[u8] = b"XP3\r\n \n\x1a\x8b\x67\x01";
+/// The largest file table Yakusu reads (big games have ~100k entries, a few MB).
+const MAX_INDEX: u64 = 512 * 1024 * 1024;
 const FILE: &[u8] = b"File";
 const INFO: &[u8] = b"info";
 const SEGM: &[u8] = b"segm";
@@ -117,22 +119,26 @@ pub fn read_index(path: &Path) -> std::io::Result<Vec<Entry>> {
         f.seek(SeekFrom::Start(offset))?;
         f.read_exact(&mut flag)?;
     }
+    // Sizes below come from the file: never allocate more than it holds, and
+    // never inflate an index past MAX_INDEX.
+    let file_len = f.metadata()?.len();
     let raw = if flag[0] & 1 == 1 {
         f.read_exact(&mut b8)?;
         let packed = u64::from_le_bytes(b8);
         f.read_exact(&mut b8)?;
-        if packed > 512 * 1024 * 1024 {
+        let orig = u64::from_le_bytes(b8);
+        if packed > MAX_INDEX || packed > file_len || orig > MAX_INDEX {
             return Err(bad());
         }
         let mut buf = vec![0u8; packed as usize];
         f.read_exact(&mut buf)?;
         let mut out = Vec::new();
-        ZlibDecoder::new(&buf[..]).read_to_end(&mut out).map_err(|_| bad())?;
+        ZlibDecoder::new(&buf[..]).take(orig).read_to_end(&mut out).map_err(|_| bad())?;
         out
     } else {
         f.read_exact(&mut b8)?;
         let size = u64::from_le_bytes(b8);
-        if size > 512 * 1024 * 1024 {
+        if size > MAX_INDEX || size > file_len {
             return Err(bad());
         }
         let mut buf = vec![0u8; size as usize];
@@ -184,26 +190,58 @@ pub fn read_index(path: &Path) -> std::io::Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// The largest single file Yakusu reads out of an archive (scripts are a few MB).
+pub const MAX_ENTRY: u64 = 256 * 1024 * 1024;
+
+/// One file's bytes. Sizes in the index are untrusted: every segment must
+/// lie inside the archive, decompress to exactly its declared size, and the
+/// segments must add up to the file's declared size.
 pub fn read_file(path: &Path, entry: &Entry) -> std::io::Result<Vec<u8>> {
+    let bad = |m: String| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}: {m}", entry.name));
+    if entry.size > MAX_ENTRY {
+        return Err(bad(format!("declares {} bytes, more than Yakusu reads from one file", entry.size)));
+    }
     let mut f = File::open(path)?;
+    let archive_len = f.metadata()?.len();
     let mut out = Vec::with_capacity(entry.size as usize);
-    for &(flags, off, _orig, packed) in &entry.segments {
+    for &(flags, off, orig, packed) in &entry.segments {
+        let end = off.checked_add(packed).ok_or_else(|| bad("segment position overflows".into()))?;
+        if end > archive_len {
+            return Err(bad("segment runs past the end of the archive".into()));
+        }
+        if (out.len() as u64).saturating_add(orig) > entry.size {
+            return Err(bad("segments are larger than the file".into()));
+        }
         f.seek(SeekFrom::Start(off))?;
-        let mut buf = vec![0u8; packed as usize];
+        let mut buf = vec![0u8; packed as usize]; // <= archive length, checked above
         f.read_exact(&mut buf)?;
+        let before = out.len();
         if flags & 7 != 0 {
-            ZlibDecoder::new(&buf[..]).read_to_end(&mut out)?;
+            ZlibDecoder::new(&buf[..]).take(orig + 1).read_to_end(&mut out)?;
         } else {
             out.extend_from_slice(&buf);
         }
+        let got = (out.len() - before) as u64;
+        if got != orig {
+            return Err(bad(format!("segment holds {got} bytes but declares {orig}")));
+        }
+    }
+    if out.len() as u64 != entry.size {
+        return Err(bad(format!("holds {} bytes but declares {}", out.len(), entry.size)));
     }
     Ok(out)
 }
 
+/// Starts with the scrambled-script header (`FE FE 0x FF FE`).
+pub fn is_scrambled(data: &[u8]) -> bool {
+    data.len() >= 5 && data[0] == 0xFE && data[1] == 0xFE && data[3] == 0xFF && data[4] == 0xFE
+}
+
 /// Undo Kirikiri script scrambling (`FE FE 0x FF FE`). Port of
-/// KirikiriDescrambler (MIT). `None` if the data isn't scrambled.
+/// KirikiriDescrambler (MIT). `None` if the data isn't scrambled, or is
+/// scrambled but damaged (see [`is_scrambled`] to tell them apart).
 pub fn descramble(data: &[u8]) -> Option<String> {
-    if data.len() < 5 || data[0] != 0xFE || data[1] != 0xFE || data[3] != 0xFF || data[4] != 0xFE {
+    if !is_scrambled(data) {
         return None;
     }
     let mode = data[2];
@@ -229,12 +267,22 @@ pub fn descramble(data: &[u8]) -> Option<String> {
             }
         }
         2 => {
+            // (compressed length, original length), then zlib data. Both
+            // lengths are untrusted: check them before using them.
             if body.len() < 16 {
                 return None;
             }
-            let packed = i64::from_le_bytes(body[0..8].try_into().ok()?) as usize;
-            let mut out = Vec::new();
-            ZlibDecoder::new(&body[16..(16 + packed).min(body.len())]).read_to_end(&mut out).ok()?;
+            let packed = u64::from_le_bytes(body[0..8].try_into().ok()?);
+            let orig = u64::from_le_bytes(body[8..16].try_into().ok()?);
+            let avail = (body.len() - 16) as u64;
+            if packed > avail || orig > MAX_ENTRY {
+                return None;
+            }
+            let mut out = Vec::with_capacity(orig as usize);
+            ZlibDecoder::new(&body[16..16 + packed as usize]).take(orig + 1).read_to_end(&mut out).ok()?;
+            if out.len() as u64 != orig {
+                return None;
+            }
             body = out;
         }
         _ => return None,

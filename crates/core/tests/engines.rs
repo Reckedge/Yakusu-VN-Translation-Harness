@@ -4,7 +4,7 @@ mod common;
 use common::*;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use yakusu_core::engines::{self, manual};
+use yakusu_core::engines::{self, generic, manual};
 use yakusu_core::pipeline::Pipeline;
 use yakusu_core::project::Project;
 
@@ -76,8 +76,10 @@ fn names_translated_in_name_field() {
     pipe.draft_style().unwrap();
     pipe.translate(None, false).unwrap();
     pipe.build().unwrap();
-    let out: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(pipe.p.work("json_tl/data_pfs/a.json")).unwrap()).unwrap();
+    let out: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(pipe.p.work(&format!("json_tl/{}/a.json", generic::dir_key("data.pfs")))).unwrap(),
+    )
+    .unwrap();
     assert_eq!(out[0]["name"], "Sakura");
     assert_eq!(out[3]["name"], "Taiga");
 }

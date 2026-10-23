@@ -85,7 +85,7 @@ fn anthropic_request_shape_and_cost() {
     assert_eq!(body["system"][0]["cache_control"], json!({"type": "ephemeral"}));
     assert_eq!(body["messages"], json!([{"role": "user", "content": "USER"}]));
     assert_eq!(c.usage, llm::Usage { input: 100, output: 20, cache_write: 0, cache_read: 50 });
-    assert!((c.usd - (100.0 * 0.10 + 20.0 * 0.50 + 50.0 * 0.01) / 1e6).abs() < 1e-12);
+    assert!((c.usd.unwrap() - (100.0 * 0.10 + 20.0 * 0.50 + 50.0 * 0.01) / 1e6).abs() < 1e-12);
 }
 
 #[test]

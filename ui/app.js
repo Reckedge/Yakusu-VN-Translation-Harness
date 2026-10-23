@@ -420,11 +420,28 @@
       const bu = h('input', { class: 'input', id: 'burl', value: (s.base_urls || {})[s.provider] || prov.base_url });
       const saveModels = () => safe(async () => { await call('settings', { provider: s.provider, translate_model: tm.value, review_model: rm.value, base_url: bu.value, review: !!rm.value.trim() }); toast('Saved.'); refresh(); });
       [tm, rm, bu].forEach((x) => x.addEventListener('change', saveModels));
+      // Paid providers: the price per million tokens, for estimates and the spending limit.
+      const priceRow = (model, id) => {
+        const cur = (s.prices || {})[model] || [];
+        const pin = h('input', { class: 'input', id: id + 'In', inputmode: 'decimal', value: cur[0] ?? '', placeholder: 'Input', 'aria-label': `${model} input price, USD per million tokens` });
+        const pout = h('input', { class: 'input', id: id + 'Out', inputmode: 'decimal', value: cur[1] ?? '', placeholder: 'Output', 'aria-label': `${model} output price, USD per million tokens` });
+        const save = () => safe(async () => {
+          const both = pin.value.trim() !== '' && pout.value.trim() !== '';
+          await call('settings', { prices: { [model]: both ? [pin.value, pout.value] : null } });
+          toast('Saved.'); refresh();
+        });
+        [pin, pout].forEach((x) => x.addEventListener('change', save));
+        return h('div', { class: 'price-row' }, h('span', { class: 'hint', text: 'Price in $ per million tokens: input, output' }), h('div', { class: 'two' }, pin, pout));
+      };
+      const tmName = ((s.translate_model || {})[s.provider] || '').trim();
+      const rmName = ((s.review_model || {})[s.provider] || '').trim();
       f.append(h('div', { class: 'two' },
-        h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'tmodel', text: 'Translation model' }), tm),
-        h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'rmodel', text: 'Review model' }), rm)),
+        h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'tmodel', text: 'Translation model' }), tm,
+          s.provider !== 'local' && tmName ? priceRow(tmName, 'tprice') : null),
+        h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'rmodel', text: 'Review model' }), rm,
+          s.provider !== 'local' && rmName ? priceRow(rmName, 'rprice') : null)),
         h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'burl', text: 'API address' }), bu,
-          h('p', { class: 'hint', text: s.provider === 'local' ? 'Start the local server in LM Studio (Developer tab) first. Local models are free but slower, and quality depends on the model.' : 'Cost estimates are only shown for Claude models. Yakusu still counts the tokens it uses.' })));
+          h('p', { class: 'hint', text: s.provider === 'local' ? 'Start the local server in LM Studio (Developer tab) first. Local models are free but slower, and quality depends on the model.' : 'Enter each model\'s price (from your provider\'s pricing page) to see cost estimates and use a spending limit. Without a price, a run with a spending limit won\'t start.' })));
     }
     $('#presetGroup').hidden = s.provider !== 'anthropic';
     renderPresets();

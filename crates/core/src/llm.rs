@@ -30,14 +30,16 @@ pub struct Usage {
     pub cache_read: u64,
 }
 
-pub fn cost_usd(model: &str, u: &Usage) -> f64 {
-    match price_of(model) {
-        None => 0.0,
-        Some(p) => {
-            (u.input as f64 * p[0] + u.output as f64 * p[1] + u.cache_write as f64 * p[2] + u.cache_read as f64 * p[3])
-                / 1e6
-        }
-    }
+/// Cost of `u` at prices `p` (USD per million tokens).
+pub fn cost_at(p: &[f64; 4], u: &Usage) -> f64 {
+    (u.input as f64 * p[0] + u.output as f64 * p[1] + u.cache_write as f64 * p[2] + u.cache_read as f64 * p[3]) / 1e6
+}
+
+/// Cost at the built-in price, `None` when the price isn't known. An unknown
+/// price is not a price of zero: callers that enforce a spending limit must
+/// refuse rather than count it as free.
+pub fn cost_usd(model: &str, u: &Usage) -> Option<f64> {
+    price_of(model).map(|p| cost_at(&p, u))
 }
 
 pub struct Provider {
@@ -133,7 +135,8 @@ impl std::fmt::Display for LlmError {
 pub struct Completion {
     pub text: String,
     pub usage: Usage,
-    pub usd: f64,
+    /// `None` when the model's price isn't known.
+    pub usd: Option<f64>,
 }
 
 /// Anything that can answer a prompt. The real clients talk HTTP; tests and

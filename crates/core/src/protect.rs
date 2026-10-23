@@ -277,13 +277,41 @@ pub fn check(p: &Protected, translated: Option<&str>) -> Vec<String> {
             problems.push(format!("unexpected codes {extra:?}"));
         }
     }
+    let invented = invented_codes(t);
+    if !invented.is_empty() {
+        let shown: Vec<&str> = invented.iter().take(3).map(String::as_str).collect();
+        problems.push(format!("adds engine code {} (only the ⟦n⟧ placeholders may carry codes)", shown.join(" ")));
+    }
+    if t.contains(['\n', '\r']) {
+        problems.push("line break typed into the text (breaks are added automatically)".into());
+    } else if t.chars().any(char::is_control) {
+        problems.push("control characters in the text".into());
+    }
     // Opening and closing commands (colour on/off, link start/end) must keep
-    // their order, or the game renders the wrong span. Other codes may move.
-    let pos = |n: usize| t.find(&placeholder(n));
-    for (a, b) in code_pairs(p) {
-        if let (Some(x), Some(y)) = (pos(a), pos(b)) {
+    // their order, and spans must keep their nesting: `<color><b>…</b></color>`
+    // can't become `<color><b>…</color></b>`. Independent spans may move.
+    let pairs = code_pairs(p);
+    let spot = |s: &str, n: usize| s.find(&placeholder(n));
+    for &(a, b) in &pairs {
+        if let (Some(x), Some(y)) = (spot(t, a), spot(t, b)) {
             if x > y {
                 problems.push(format!("codes out of order: ⟦{a}⟧ must come before ⟦{b}⟧"));
+            }
+        }
+    }
+    let span = |s: &str, (a, b): (usize, usize)| Some((spot(s, a)?, spot(s, b)?)).filter(|(x, y)| x < y);
+    for (i, &pa) in pairs.iter().enumerate() {
+        for &pb in &pairs[i + 1..] {
+            let (Some(sa), Some(sb), Some(ta), Some(tb)) =
+                (span(&p.text, pa), span(&p.text, pb), span(t, pa), span(t, pb))
+            else {
+                continue;
+            };
+            if nesting(sa, sb) != nesting(ta, tb) {
+                problems.push(format!(
+                    "codes nested differently: ⟦{}⟧…⟦{}⟧ and ⟦{}⟧…⟦{}⟧ must keep the source's nesting",
+                    pa.0, pa.1, pb.0, pb.1
+                ));
             }
         }
     }
@@ -291,6 +319,51 @@ pub fn check(p: &Protected, translated: Option<&str>) -> Vec<String> {
         problems.push("still has Japanese".into());
     }
     problems
+}
+
+/// How two code spans sit relative to each other. Spans that don't overlap
+/// are `Apart` whichever comes first, so independent spans may swap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Nesting {
+    Apart,
+    Outside,
+    Inside,
+    Crossed,
+}
+
+fn nesting(a: (usize, usize), b: (usize, usize)) -> Nesting {
+    if a.1 < b.0 || b.1 < a.0 {
+        Nesting::Apart
+    } else if a.0 < b.0 && b.1 < a.1 {
+        Nesting::Outside
+    } else if b.0 < a.0 && a.1 < b.1 {
+        Nesting::Inside
+    } else {
+        Nesting::Crossed
+    }
+}
+
+/// Engine syntax a translation added on its own: anything that looks like a
+/// code but isn't a placeholder. Text is written into the script as-is, so a
+/// stray `[jump ...]` or `@call` there would run in the game.
+pub fn invented_codes(t: &str) -> Vec<String> {
+    CODE_RE.find_iter(t).map(|m| m.as_str().to_string()).collect()
+}
+
+/// Codes in a finished message that the source line didn't have. The
+/// original codes and the engine's line break are masked first, so text
+/// next to a code can't merge with it into something new.
+pub fn foreign_codes(p: &Protected, rendered: &str, line_break: &str) -> Vec<String> {
+    let mut rest = rendered.to_string();
+    let mut codes: Vec<&String> = p.codes.iter().collect();
+    codes.sort_by_key(|c| std::cmp::Reverse(c.len()));
+    for c in codes.into_iter().filter(|c| !c.is_empty()) {
+        rest = rest.replacen(c.as_str(), "\u{0}", 1);
+    }
+    if !line_break.is_empty() {
+        rest = rest.replace(line_break, "\u{0}");
+    }
+    invented_codes(&rest)
 }
 
 /// Rebuild a full message from the translated body.

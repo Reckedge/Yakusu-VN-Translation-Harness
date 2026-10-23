@@ -1,0 +1,2 @@
+# Applied byte-for-byte to msg-tool before it is built.
+*.patch -text

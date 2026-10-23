@@ -168,15 +168,29 @@ impl Kirikiri {
         out
     }
 
+    /// Save one script under `root`. `rel` comes from the archive, so it is
+    /// checked before anything is written.
     fn save_script(root: &Path, rel: &str, data: Vec<u8>) -> Result<()> {
+        let dst = super::safe_join(root, rel)?;
         let data = match xp3::descramble(&data) {
             // Descrambled scripts work as-is (UTF-16LE with BOM).
             Some(text) => ks::encode(&text, "utf-16"),
+            None if xp3::is_scrambled(&data) => {
+                return user(format!("{rel} is a scrambled script with a damaged header, so it can't be read."))
+            }
             None => data,
         };
-        let dst = join_rel(root, rel);
         fs::create_dir_all(dst.parent().unwrap())?;
         fs::write(dst, data)?;
+        Ok(())
+    }
+
+    /// Refuse an archive whose script names could point outside the work
+    /// folder, before anything is extracted from it.
+    fn check_names(arc: &str, entries: &[xp3::Entry]) -> Result<()> {
+        for e in entries.iter().filter(|e| is_script(&e.name)) {
+            super::safe_rel(&e.name).map_err(|err| Error::User(format!("{arc}: {err}")))?;
+        }
         Ok(())
     }
 
@@ -231,9 +245,14 @@ impl Engine for Kirikiri {
         let mut encrypted = false;
         let mut found = 0usize;
         let mut origin: BTreeMap<String, String> = BTreeMap::new();
+        let mut plain_archives: BTreeSet<String> = BTreeSet::new();
+        let inst = Installer::new(cx.project);
         for arc in self.source_archives(cx) {
-            let path = game.join(&arc);
+            let path = inst.original(&game, &arc)?;
             let entries = xp3::read_index(&path).ok();
+            if let Some(entries) = &entries {
+                Self::check_names(&arc, entries)?;
+            }
             if entries.is_none() && MEDIA_RE.is_match(&arc) {
                 cx.log(format!("Skipping {arc} (media archive)"));
                 continue;
@@ -258,6 +277,7 @@ impl Engine for Kirikiri {
                         .unwrap_or(false);
                     if readable && sample.encrypted_flag == 0 {
                         cx.log(format!("Reading {arc} ({} files)", entries.len()));
+                        plain_archives.insert(arc.clone());
                         for e in entries.iter().filter(|e| is_script(&e.name)) {
                             let data = xp3::read_file(&path, e)?;
                             let rel = e.name.replace('\\', "/");
@@ -305,6 +325,30 @@ impl Engine for Kirikiri {
         }
         if found == 0 {
             return user("No Kirikiri scenario scripts (.ks / .scn) were found in this game's .xp3 archives.");
+        }
+        // Unpacking without an error doesn't mean decryption worked: a wrong
+        // profile turns scripts into noise. Check every script before any of
+        // it is translated.
+        let garbled: Vec<String> = list_files(&scripts_dir, Some(&[".ks"]))
+            .into_iter()
+            .filter(|rel| fs::read(join_rel(&scripts_dir, rel)).map(|d| ks::garbled(&ks::decode(&d).0)).unwrap_or(true))
+            .collect();
+        if !garbled.is_empty() {
+            let examples = garbled.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+            let from_encrypted = garbled.iter().any(|r| origin.get(r).is_some_and(|a| !plain_archives.contains(a)));
+            return match (&title, from_encrypted) {
+                (Some(t), true) => user(format!(
+                    "{} of {found} scripts didn't decrypt into readable text with the profile for \"{t}\" \
+                     (for example {examples}). The game probably needs a different profile: pick the exact game and \
+                     edition from the list on the Game step, then read the scripts again.",
+                    garbled.len()
+                )),
+                _ => user(format!(
+                    "{} of {found} scripts aren't readable text (for example {examples}). They may be damaged, or \
+                     encrypted in a way Yakusu can't read.",
+                    garbled.len()
+                )),
+            };
         }
         self.m.set("encrypted", encrypted);
         self.m.set("script_origin", serde_json::to_value(&origin)?);

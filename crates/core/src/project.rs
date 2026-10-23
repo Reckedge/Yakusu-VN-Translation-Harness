@@ -238,6 +238,21 @@ pub fn repair_tail(path: &Path) -> std::io::Result<()> {
     f.sync_all()
 }
 
+/// Forget results made for a different version of their line's Japanese
+/// (the game was updated, or a script was swapped). They stay in
+/// results.jsonl as history but no longer count as done, so the line is
+/// translated again and the old English never reaches a build.
+fn drop_stale(map: &mut HashMap<String, Arc<ResultRow>>, lines: &[Line]) {
+    if lines.is_empty() {
+        return;
+    }
+    let jp: HashMap<&str, &str> = lines.iter().map(|l| (l.id.as_str(), l.jp.as_str())).collect();
+    map.retain(|id, r| match (jp.get(id.as_str()), r.src.as_deref()) {
+        (Some(now), Some(was)) => *now == was,
+        _ => true,
+    });
+}
+
 // ---------------------------------------------------------------- project
 
 type Spent = (f64, BTreeMap<String, f64>);
@@ -322,7 +337,13 @@ impl Project {
         let tmp = self.path("lines.jsonl.tmp");
         fs::write(&tmp, buf)?;
         fs::rename(&tmp, self.path("lines.jsonl"))?;
-        *guard = Some(Arc::new(lines));
+        let lines = Arc::new(lines);
+        *guard = Some(lines.clone());
+        drop(guard);
+        // Results for lines whose Japanese changed no longer apply.
+        if let Some(map) = self.results.write().unwrap().as_mut() {
+            drop_stale(map, &lines);
+        }
         Ok(())
     }
 
@@ -354,6 +375,7 @@ impl Project {
         if self.results.read().unwrap().is_some() {
             return;
         }
+        let lines = self.lines(); // before taking the results lock (lock order: lines, results)
         let mut guard = self.results.write().unwrap();
         if guard.is_some() {
             return;
@@ -367,6 +389,7 @@ impl Project {
                 }
             }
         }
+        drop_stale(&mut map, &lines);
         *guard = Some(map);
     }
 

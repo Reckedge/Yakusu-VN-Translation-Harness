@@ -135,6 +135,9 @@ pub struct Settings {
     pub review: bool,
     /// 0 = no cap
     pub budget_usd: f64,
+    /// model -> [input, output] USD per million tokens, entered by the user
+    /// for models Yakusu has no price for (needed for estimates and the cap).
+    pub prices: IndexMap<String, [f64; 2]>,
     pub batch_size: usize,
     pub context_lines: usize,
     pub parallel: usize,
@@ -156,6 +159,7 @@ impl Default for Settings {
             review_model: IndexMap::new(),
             review: true,
             budget_usd: 0.0,
+            prices: IndexMap::new(),
             batch_size: 40,
             context_lines: 10,
             parallel: 4,
