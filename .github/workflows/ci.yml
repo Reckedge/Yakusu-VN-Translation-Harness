@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+env:
+  CARGO_TERM_COLOR: always
+  MSGTOOL_REF: 64856108ef5aa18d15f5debc67ff2ade2fda2c45
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with: { components: 'clippy, rustfmt' }
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the real msg-tool (for the archive tests)
+        uses: actions/cache@v4
+        id: msgtool
+        with:
+          path: ~/msg_tool
+          key: msgtool-${{ env.MSGTOOL_REF }}
+      - if: steps.msgtool.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/lifegpc/msg-tool /tmp/msg-tool
+          cd /tmp/msg-tool && git checkout $MSGTOOL_REF
+          cargo build --release --no-default-features --features "all-script,all-arc"
+          cp target/release/msg_tool ~/msg_tool
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p yakusu-core --all-targets -- -D warnings
+      - run: cargo test -p yakusu-core
+        env: { YAKUSU_REAL_MSG_TOOL: /home/runner/msg_tool }
+      - run: cargo test -p yakusu-core --release -- --ignored large --nocapture

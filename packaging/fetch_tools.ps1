@@ -1,33 +1,37 @@
-# Fills tools/ with the third-party programs Yakusu drives. Run on Windows:
+# Fills tools/ with the third-party programs Yakusu drives. build.rs packs
+# them into Yakusu.exe. Run on Windows:
 #   powershell -ExecutionPolicy Bypass -File packaging\fetch_tools.ps1
-# Needs: Rust (cargo) for msg-tool, and the GitHub CLI (gh) for release downloads.
+# Needs Rust (cargo) and git. Every version is pinned.
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $root = Split-Path -Parent $PSScriptRoot
 $tools = Join-Path $root 'tools'
 New-Item -ItemType Directory -Force -Path $tools, "$tools\kirikiri", "$tools\VNTextPatch" | Out-Null
 $tmp = Join-Path $env:TEMP 'yakusu-tools'
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 
 # 1. msg-tool (lifegpc/msg-tool, GPL-3.0): scripts + archives for ~20 engines.
-$MSGTOOL_REF = 'master'
-if (-not (Test-Path "$tmp\msg-tool")) { git clone https://github.com/lifegpc/msg-tool "$tmp\msg-tool" }
+$MSGTOOL_REF = '64856108ef5aa18d15f5debc67ff2ade2fda2c45'
+if (-not (Test-Path "$tmp\msg-tool\.git")) { git clone https://github.com/lifegpc/msg-tool "$tmp\msg-tool"; Check 'git clone msg-tool' }
 Push-Location "$tmp\msg-tool"
-git fetch origin; git checkout $MSGTOOL_REF
-cargo build --release --no-default-features --features "all-script,all-arc"
+git fetch origin; Check 'git fetch'
+git checkout --force $MSGTOOL_REF; Check 'git checkout'
+cargo build --release --no-default-features --features "all-script,all-arc"; Check 'msg-tool build'
 Copy-Item target\release\msg_tool.exe "$tools\msg-tool.exe" -Force
 Pop-Location
 
-# 2. VNTextPatch + VNTextProxy (arcusmaximus/VNTranslationTools, MIT).
-gh release download --repo arcusmaximus/VNTranslationTools --pattern '*.zip' --dir $tmp --clobber
-Get-ChildItem $tmp -Filter '*.zip' | Where-Object { $_.Name -match 'VNTextPatch|VNTranslationTools' } | ForEach-Object {
-  Expand-Archive $_.FullName -DestinationPath "$tools\VNTextPatch" -Force }
+# 2. VNTextPatch (arcusmaximus/VNTranslationTools v0.0.41, MIT).
+$zip = "$tmp\VNTranslationTools.zip"
+Invoke-WebRequest 'https://github.com/arcusmaximus/VNTranslationTools/releases/download/v0.0.41/VNTranslationTools.zip' -OutFile $zip
+Expand-Archive $zip -DestinationPath "$tools\VNTextPatch" -Force
+if (-not (Get-ChildItem "$tools\VNTextPatch" -Recurse -Filter 'VNTextPatch.exe')) { throw 'VNTextPatch.exe not found in VNTranslationTools.zip' }
+# Yakusu looks for tools\VNTextPatch\VNTextPatch.exe: flatten one level if the zip has a folder.
+$exe = Get-ChildItem "$tools\VNTextPatch" -Recurse -Filter 'VNTextPatch.exe' | Select-Object -First 1
+if ($exe.DirectoryName -ne "$tools\VNTextPatch") { Get-ChildItem $exe.DirectoryName | Move-Item -Destination "$tools\VNTextPatch" -Force }
 
-# 3. KirikiriUnencryptedArchive version.dll (arcusmaximus/KirikiriTools, MIT).
-gh release download --repo arcusmaximus/KirikiriTools --pattern '*.zip' --dir "$tmp\krkr" --clobber
-Get-ChildItem "$tmp\krkr" -Filter '*.zip' | ForEach-Object { Expand-Archive $_.FullName -DestinationPath "$tmp\krkr\x" -Force }
-$dll = Get-ChildItem "$tmp\krkr\x" -Recurse -Filter 'version.dll' | Select-Object -First 1
-if (-not $dll) { throw 'version.dll not found in the KirikiriTools release' }
-Copy-Item $dll.FullName "$tools\kirikiri\version.dll" -Force
+# 3. KirikiriUnencryptedArchive version.dll (arcusmaximus/KirikiriTools 1.7, MIT).
+Invoke-WebRequest 'https://github.com/arcusmaximus/KirikiriTools/releases/download/1.7/version.dll' -OutFile "$tools\kirikiri\version.dll"
 
 Write-Host "Tools ready in $tools"
-Get-ChildItem $tools -Recurse | Select-Object FullName
+Get-ChildItem $tools -Recurse -File | Select-Object FullName, Length

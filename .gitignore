@@ -1,6 +1,5 @@
-tools/
+/target
+/src-tauri/gen
+/tools
+*.tmp
 __pycache__/
-*.pyc
-build/
-dist/
-.pytest_cache/

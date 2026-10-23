@@ -1,0 +1,39 @@
+[package]
+name = "yakusu-core"
+description = "Translation engine behind Yakusu: extract, translate, fit and patch Japanese visual novel scripts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+# Browser dev server (serves ui/ and the command API over HTTP).
+dev-server = ["dep:tiny_http"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+regex = "1"
+unicode-width = "0.2"
+unicode-normalization = "0.1"
+encoding_rs = "0.8"
+flate2 = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha1_smol = "1"
+dirs = "6"
+strsim = "0.11"
+csv = "1"
+indexmap = { version = "2", features = ["serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tiny_http = { version = "0.12", optional = true }
+
+[dev-dependencies]
+tiny_http = "0.12"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "yakusu-dev"
+path = "src/bin/yakusu-dev.rs"
+required-features = ["dev-server"]
