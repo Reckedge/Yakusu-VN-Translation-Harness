@@ -3,3 +3,4 @@
 /tools/*
 !/tools/README.md
 *.tmp
+__pycache__/
