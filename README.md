@@ -30,7 +30,9 @@ Originals are never edited in place. Kirikiri games get a new `patch.xp3`; other
 
 ## Install
 
-Download the Windows installer from [Releases](../../releases). It bundles everything; there is nothing else to install.
+Download **Yakusoku.exe** from [Releases](../../releases) and double-click it. That's all: it's one file, with msg-tool and the other tools packed inside (they unpack to the data folder on first launch). Windows may warn that the file is from an unknown publisher; choose **More info**, then **Run anyway**.
+
+Prefer a Start menu entry? `Yakusoku-setup.exe` on the same page installs it for your user, no admin needed.
 
 ## Build from source
 
@@ -44,7 +46,7 @@ cargo run -p yakusoku                           # the desktop app (needs Tauri's
 YAKUSOKU_FAKE_LLM=1 cargo run -p yakusoku-core --features dev-server --bin yakusoku-dev
 ```
 
-Windows release build: `packaging\fetch_tools.ps1` builds and fetches the bundled tools into `tools/`, then `cargo tauri build` in `src-tauri` makes the NSIS installer. CI does both on every `v*` tag.
+Windows release build: `packaging\fetch_tools.ps1` builds and fetches the bundled tools into `tools/`, then `cargo tauri build` in `src-tauri` makes `target/release/Yakusoku.exe` (tools packed inside) and the installer. CI does both on every `v*` tag and attaches them to a release.
 
 Archive tests against the real msg-tool run when `YAKUSOKU_REAL_MSG_TOOL` points at a build. The large test (`cargo test --release -- --ignored large`) pushes 100,000 lines through extract, translate, build, install and restore in about four seconds with the stand-in model.
 
