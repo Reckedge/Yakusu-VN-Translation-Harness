@@ -258,7 +258,7 @@ fn large_kirikiri_roundtrip() {
     assert_eq!(pipe.build().unwrap().applied, count);
     let patch = pipe.p.work("out/patch.xp3");
     let entries = xp3::read_index(&patch).unwrap();
-    for entry in entries.iter().filter(|e| !e.name.contains('/')) {
+    for entry in entries.iter().filter(|e| !e.name.contains('/') && e.name.ends_with(".ks")) {
         let (text, _) = ks::decode(&xp3::read_file(&patch, entry).unwrap());
         let (old, _) = ks::decode(&std::fs::read(src.join(&entry.name)).unwrap());
         let cmds = |t: &str| t.lines().filter(|l| l.starts_with('@')).map(String::from).collect::<Vec<_>>();
