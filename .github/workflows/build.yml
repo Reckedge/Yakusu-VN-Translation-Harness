@@ -10,7 +10,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p yakusoku-core
       - run: powershell -ExecutionPolicy Bypass -File packaging\fetch_tools.ps1
