@@ -1,9 +1,12 @@
 name: release
-# Builds Yakusu.exe (one file, tools packed inside). Push a tag like v0.2.0
-# to publish it on the Releases page; run it by hand to just get the file.
+# Builds Yakusu.exe (one file, tools packed inside) and attaches it to the
+# release. Publish a release (or push a tag like v0.2.0); run it by hand to
+# just get the file.
 on:
   push:
     tags: ['v*']
+  release:
+    types: [published]
   workflow_dispatch:
 jobs:
   windows:
