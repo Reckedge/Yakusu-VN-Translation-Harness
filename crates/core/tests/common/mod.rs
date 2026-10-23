@@ -100,6 +100,10 @@ pub fn sha(p: &Path) -> String {
 /// A stand-in for msg-tool's command line (Python script + sh wrapper).
 /// Returns None when python3 isn't available.
 pub fn fake_msgtool(tmp: &Path) -> Option<PathBuf> {
+    // The stand-in is a shell script; Windows can't run it as msg-tool.exe.
+    if cfg!(windows) {
+        return None;
+    }
     if std::process::Command::new("python3").arg("--version").output().is_err() {
         return None;
     }
