@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="yakusu-token" content="__YAKUSU_TOKEN__">
+<title>Yakusu</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Steps">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">訳</span>
+      <div>
+        <div class="brand-name">Yakusu</div>
+        <div class="brand-game" id="railGame">No game open</div>
+      </div>
+    </div>
+    <ol class="steps" id="steps">
+      <li><button data-view="game"><span class="n">1</span><span class="l">Game</span><span class="s" data-state="game"></span></button></li>
+      <li><button data-view="translator"><span class="n">2</span><span class="l">Translator</span><span class="s" data-state="translator"></span></button></li>
+      <li><button data-view="style"><span class="n">3</span><span class="l">Style &amp; names</span><span class="s" data-state="style"></span></button></li>
+      <li><button data-view="test"><span class="n">4</span><span class="l">Test patch</span><span class="s" data-state="test"></span></button></li>
+      <li><button data-view="run"><span class="n">5</span><span class="l">Translate &amp; install</span><span class="s" data-state="run"></span></button></li>
+    </ol>
+    <div class="rail-extra">
+      <button data-view="lines">Lines</button>
+      <button data-view="activity">Activity</button>
+    </div>
+    <div class="rail-foot" id="railFoot"></div>
+  </nav>
+
+  <main class="main">
+    <div class="banner" id="banner" role="alert" hidden>
+      <div class="banner-text"><b id="bannerTitle">Something went wrong</b><span id="bannerMsg"></span></div>
+      <div class="banner-actions">
+        <button class="btn" id="bannerRetry">Try again</button>
+        <button class="btn btn-quiet" id="bannerLog">Details</button>
+        <button class="icon-x" id="bannerClose" aria-label="Dismiss">×</button>
+      </div>
+    </div>
+    <!-- 1. Game -->
+    <section class="view" data-view="game">
+      <header class="view-head">
+        <h1>Pick the game</h1>
+        <p>Choose the folder the game is installed in (the one with its .exe). Yakusu only reads it until you install a patch, and every change can be undone.</p>
+      </header>
+      <div class="picker" id="picker">
+        <button class="btn btn-primary btn-lg" id="browseGame">Choose game folder…</button>
+        <span class="or">drop the folder here, or paste its path</span>
+        <form class="path-form" id="pathForm">
+          <input id="gamePath" type="text" spellcheck="false" placeholder="C:\Games\さくら、もゆ。" aria-label="Game folder path">
+          <button class="btn" type="submit">Open</button>
+        </form>
+      </div>
+      <div id="detectResult"></div>
+      <div id="recent"></div>
+    </section>
+
+    <!-- 2. Translator -->
+    <section class="view" data-view="translator">
+      <header class="view-head">
+        <h1>Choose the translator</h1>
+        <p>Yakusu sends the script to an AI model with your own API key. You pay the provider directly, and you see the estimate before anything is spent.</p>
+      </header>
+      <div class="field-group">
+        <div class="label">Provider</div>
+        <div class="seg" id="providerSeg" role="radiogroup" aria-label="Provider"></div>
+      </div>
+      <div id="providerFields"></div>
+      <div class="field-group" id="presetGroup">
+        <div class="label">Quality</div>
+        <div class="presets" id="presets" role="radiogroup" aria-label="Quality"></div>
+      </div>
+      <div class="field-group">
+        <label class="label" for="budget">Spending limit</label>
+        <div class="inline">
+          <span class="affix">$</span><input id="budget" type="number" min="0" step="1" class="input input-short" placeholder="0">
+          <span class="hint">Yakusu stops when it has spent this much. 0 means no limit.</span>
+        </div>
+      </div>
+      <details class="advanced" id="advanced">
+        <summary>Advanced</summary>
+        <div class="adv-grid">
+          <label class="fit-field"><span>Lines per request <b id="bsVal"></b></span><input type="range" id="batchSize" min="5" max="80" step="5"></label>
+          <label class="fit-field"><span>Requests at once <b id="parVal"></b></span><input type="range" id="parallel" min="1" max="12" step="1"></label>
+          <label class="fit-field"><span>Earlier lines shown for context <b id="ctxVal"></b></span><input type="range" id="contextLines" min="0" max="30" step="1"></label>
+        </div>
+        <p class="hint">Bigger requests are a little cheaper; more at once is faster but can hit your provider's rate limit. The defaults suit most accounts.</p>
+      </details>
+    </section>
+
+    <!-- 3. Style -->
+    <section class="view" data-view="style">
+      <header class="view-head">
+        <h1>Style sheet and names</h1>
+        <p>The model reads a sample of the script and writes down the tone, the narrator's voice and how to spell every name. Every batch follows these notes, which keeps the translation consistent. Edit anything you disagree with.</p>
+      </header>
+      <div class="row-actions">
+        <button class="btn btn-primary" id="draftStyle">Draft from the script</button>
+        <span class="hint" id="styleHint">Costs a few cents.</span>
+      </div>
+      <div class="style-grid">
+        <div class="field-group">
+          <label class="label" for="styleText">Style sheet</label>
+          <textarea id="styleText" class="input textarea" rows="16" spellcheck="true" placeholder="Narration is first person, past tense…"></textarea>
+        </div>
+        <div class="field-group">
+          <div class="label">Character names</div>
+          <table class="names"><thead><tr><th>Japanese</th><th>English</th></tr></thead><tbody id="namesBody"></tbody></table>
+          <button class="btn btn-quiet" id="addName">Add a name</button>
+          <div class="label label-gap">Terms</div>
+          <table class="names"><thead><tr><th>Japanese</th><th>English</th></tr></thead><tbody id="termsBody"></tbody></table>
+          <button class="btn btn-quiet" id="addTerm">Add a term</button>
+        </div>
+      </div>
+      <p class="hint" id="styleSaved">Changes save automatically.</p>
+    </section>
+
+    <!-- 4. Test -->
+    <section class="view" data-view="test">
+      <header class="view-head">
+        <h1>Make a test patch</h1>
+        <p>Translate the first 150 lines of one script, install them, and check them in the game. If text runs out of the box, adjust the size here and apply again. Re-applying doesn't re-translate, so it's free.</p>
+      </header>
+      <div class="row-actions">
+        <label class="label-inline" for="testFile">Script</label>
+        <select id="testFile" class="input input-select"></select>
+        <button class="btn btn-primary" id="runTest">Translate 150 lines and install</button>
+      </div>
+      <div class="scene" id="scene" aria-label="Text box preview">
+        <div class="scene-sky" aria-hidden="true"></div>
+        <div class="textbox" id="textbox">
+          <div class="nameplate" id="nameplate"></div>
+          <div class="tb-text" id="tbText"></div>
+          <div class="tb-over" id="tbOver"></div>
+        </div>
+        <div class="scene-nav">
+          <button class="icon-btn" id="prevLine" aria-label="Previous line">‹</button>
+          <span id="lineCounter"></span>
+          <button class="icon-btn" id="nextLine" aria-label="Next line">›</button>
+        </div>
+      </div>
+      <div class="fit-controls">
+        <label class="fit-field">
+          <span>Characters per line <b id="widthVal"></b></span>
+          <input type="range" id="boxWidth" min="16" max="120" step="1">
+        </label>
+        <label class="fit-field">
+          <span>Lines per box <b id="linesVal"></b></span>
+          <input type="range" id="boxLines" min="1" max="8" step="1">
+        </label>
+        <label class="fit-field">
+          <span>Dialogue quotes</span>
+          <select id="quotes" class="input input-select">
+            <option value="auto">Automatic</option>
+            <option value="curly">“Curly”</option>
+            <option value="straight">"Straight"</option>
+            <option value="keep">「Keep Japanese」</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="insertBreaks"> Insert line breaks</label>
+      </div>
+      <p class="hint" id="boxHint"></p>
+      <div class="row-actions">
+        <button class="btn" id="applyFit">Apply to the game</button>
+        <button class="btn" id="launch1">Launch the game</button>
+        <button class="btn btn-quiet danger" id="restore1">Remove the patch</button>
+      </div>
+    </section>
+
+    <!-- 5. Run -->
+    <section class="view" data-view="run">
+      <header class="view-head">
+        <h1>Translate the whole game</h1>
+        <p>Yakusu translates in batches and saves as it goes, so you can stop at any time and pick up later. When it finishes, it rewrites lines that overflow the text box, then builds and installs the patch.</p>
+      </header>
+      <div class="run-summary" id="runSummary"></div>
+      <ul class="notes" id="runNotes"></ul>
+      <div class="row-actions">
+        <button class="btn btn-primary btn-lg" id="runFull">Translate everything</button>
+        <button class="btn" id="launch2">Launch the game</button>
+      </div>
+      <details class="advanced">
+        <summary>Run one stage at a time</summary>
+        <div class="row-actions">
+          <button class="btn" data-action="translate">Translate</button>
+          <button class="btn" data-action="review">Review</button>
+          <button class="btn" data-action="fit">Shorten overflowing lines</button>
+          <button class="btn" data-action="glossary">Fix name spellings</button>
+          <button class="btn" data-action="build">Rebuild and install</button>
+          <button class="btn btn-quiet danger" data-action="restore">Restore the original game</button>
+        </div>
+      </details>
+      <div id="manualNote"></div>
+    </section>
+
+    <!-- Lines -->
+    <section class="view" data-view="lines">
+      <header class="view-head">
+        <h1>Lines</h1>
+        <p>Every line of the script. Edit a translation and it's used the next time the patch is built. Marks like ⟦1⟧ stand for game codes (pauses, choices, colors): keep each one where it belongs.</p>
+      </header>
+      <div class="lines-bar">
+        <div class="seg seg-sm" id="lineFilter" role="radiogroup" aria-label="Filter">
+          <button data-f="all" aria-pressed="true">All</button>
+          <button data-f="translated">Translated</button>
+          <button data-f="untranslated">Not yet</button>
+          <button data-f="problems">Problems</button>
+          <button data-f="reviewed">Changed in review</button>
+          <button data-f="skipped">Skipped</button>
+        </div>
+        <input id="lineSearch" class="input" type="search" placeholder="Search Japanese, English or speaker" aria-label="Search lines">
+      </div>
+      <div class="lines-tools">
+        <button class="btn btn-quiet" id="retranslatePage" hidden>Retranslate the lines shown</button>
+        <span class="spacer"></span>
+        <button class="btn btn-quiet" id="exportCsv">Export for proofreading (CSV)</button>
+        <label class="btn btn-quiet file-btn">Import edited CSV<input type="file" id="importCsv" accept=".csv,text/csv"></label>
+      </div>
+      <div class="lines-list" id="linesList"></div>
+      <div class="pager" id="pager"></div>
+    </section>
+
+    <!-- Activity -->
+    <section class="view" data-view="activity">
+      <header class="view-head"><h1>Activity</h1><p>What Yakusu has been doing, including output from the tools it runs.</p></header>
+      <pre class="log" id="log"></pre>
+    </section>
+
+    <div class="jobbar" id="jobbar" hidden>
+      <div class="job-text"><b id="jobStage"></b> <span id="jobMsg"></span></div>
+      <div class="job-meter"><div class="job-fill" id="jobFill"></div></div>
+      <div class="job-num" id="jobNum"></div>
+      <button class="btn btn-quiet" id="jobStop">Stop</button>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

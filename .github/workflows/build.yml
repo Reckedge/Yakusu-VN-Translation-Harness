@@ -1,0 +1,32 @@
+name: build
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install pytest && python -m pytest -q tests
+  windows:
+    needs: test
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: powershell -ExecutionPolicy Bypass -File packaging\fetch_tools.ps1
+      - run: pip install pyinstaller pywebview
+      - run: pyinstaller --noconfirm packaging\yakusu.spec
+      - run: Compress-Archive -Path dist\Yakusu -DestinationPath Yakusu-windows.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: Yakusu-windows, path: Yakusu-windows.zip }
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: Yakusu-windows.zip }
