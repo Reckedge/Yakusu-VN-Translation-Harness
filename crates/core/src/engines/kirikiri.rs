@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 const SCRIPT_EXTS: &[&str] = &[".ks", ".scn"];
-/// A small file inside every patch.xp3 Yakusoku builds.
-pub const PATCH_MARKER: &str = "yakusoku-patch.json";
+/// A small file inside every patch.xp3 Yakusu builds.
+pub const PATCH_MARKER: &str = "yakusu-patch.json";
 /// Archives that only ever hold images, audio or video: never worth decrypting.
 static MEDIA_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -240,9 +240,9 @@ impl Engine for Kirikiri {
             }
             if let Some(entries) = &entries {
                 if entries.iter().any(|e| e.name == PATCH_MARKER) {
-                    // A patch Yakusoku made earlier (perhaps before its data folder
+                    // A patch Yakusu made earlier (perhaps before its data folder
                     // was reset): never read our own English back as the source.
-                    cx.log(format!("Skipping {arc} (a Yakusoku patch, not the original game)"));
+                    cx.log(format!("Skipping {arc} (a Yakusu patch, not the original game)"));
                     continue;
                 }
                 let has_scripts = entries.iter().any(|e| is_script(&e.name));
@@ -282,8 +282,8 @@ impl Engine for Kirikiri {
                     }
                     None => {
                         return user(format!(
-                            "{arc} is encrypted and Yakusoku couldn't tell which game this is. \
-                             Pick the game from the list on the Game step and Yakusoku will read the scripts again."
+                            "{arc} is encrypted and Yakusu couldn't tell which game this is. \
+                             Pick the game from the list on the Game step and Yakusu will read the scripts again."
                         ))
                     }
                 }
@@ -401,7 +401,7 @@ impl Engine for Kirikiri {
         // Mark the archive as ours, so reading the game again never mistakes
         // it for the original scripts.
         let marker =
-            serde_json::json!({"made_by": "Yakusoku", "version": env!("CARGO_PKG_VERSION"), "scripts": changed.len()});
+            serde_json::json!({"made_by": "Yakusu", "version": env!("CARGO_PKG_VERSION"), "scripts": changed.len()});
         fs::write(stage.join(PATCH_MARKER), serde_json::to_vec_pretty(&marker)?)?;
         files.insert(PATCH_MARKER.to_string());
         xp3::write_archive(&stage, &out.join(&patch_name), &files.into_iter().collect::<Vec<_>>())?;

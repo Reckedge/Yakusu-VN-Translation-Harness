@@ -1,5 +1,5 @@
-# Fills tools/ with the third-party programs Yakusoku drives. build.rs packs
-# them into Yakusoku.exe. Run on Windows:
+# Fills tools/ with the third-party programs Yakusu drives. build.rs packs
+# them into Yakusu.exe. Run on Windows:
 #   powershell -ExecutionPolicy Bypass -File packaging\fetch_tools.ps1
 # Needs Rust (cargo) and git. Every version is pinned.
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ $ProgressPreference = 'SilentlyContinue'
 $root = Split-Path -Parent $PSScriptRoot
 $tools = Join-Path $root 'tools'
 New-Item -ItemType Directory -Force -Path $tools, "$tools\kirikiri", "$tools\VNTextPatch" | Out-Null
-$tmp = Join-Path $env:TEMP 'yakusoku-tools'
+$tmp = Join-Path $env:TEMP 'yakusu-tools'
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 
@@ -26,7 +26,7 @@ $zip = "$tmp\VNTranslationTools.zip"
 Invoke-WebRequest 'https://github.com/arcusmaximus/VNTranslationTools/releases/download/v0.0.41/VNTranslationTools.zip' -OutFile $zip
 Expand-Archive $zip -DestinationPath "$tools\VNTextPatch" -Force
 if (-not (Get-ChildItem "$tools\VNTextPatch" -Recurse -Filter 'VNTextPatch.exe')) { throw 'VNTextPatch.exe not found in VNTranslationTools.zip' }
-# Yakusoku looks for tools\VNTextPatch\VNTextPatch.exe: flatten one level if the zip has a folder.
+# Yakusu looks for tools\VNTextPatch\VNTextPatch.exe: flatten one level if the zip has a folder.
 $exe = Get-ChildItem "$tools\VNTextPatch" -Recurse -Filter 'VNTextPatch.exe' | Select-Object -First 1
 if ($exe.DirectoryName -ne "$tools\VNTextPatch") { Get-ChildItem $exe.DirectoryName | Move-Item -Destination "$tools\VNTextPatch" -Force }
 

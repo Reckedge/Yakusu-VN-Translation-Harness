@@ -1,4 +1,4 @@
-//! The desktop window. Everything happens in yakusoku-core; this shell only
+//! The desktop window. Everything happens in yakusu-core; this shell only
 //! forwards `call(command, args)` from the interface and supplies the folder
 //! picker, drag and drop, and the bundled tools.
 
@@ -8,9 +8,9 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Manager;
-use yakusoku_core::app::App;
-use yakusoku_core::config::Env;
-use yakusoku_core::llm;
+use yakusu_core::app::App;
+use yakusu_core::config::Env;
+use yakusu_core::llm;
 
 /// msg-tool, VNTextPatch and version.dll, zipped into the executable by build.rs.
 static TOOLS_ZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tools.zip"));
@@ -61,12 +61,12 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let home = Env::system(PathBuf::new()).home;
-            let tools = std::env::var_os("YAKUSOKU_TOOLS")
+            let tools = std::env::var_os("YAKUSU_TOOLS")
                 .map(PathBuf::from)
                 .or_else(|| unpack_tools(&home))
                 .or_else(|| app.path().resource_dir().ok().map(|d| d.join("tools")))
                 .unwrap_or_default();
-            let factory = if std::env::var("YAKUSOKU_FAKE_LLM").as_deref() == Ok("1") {
+            let factory = if std::env::var("YAKUSU_FAKE_LLM").as_deref() == Ok("1") {
                 llm::fake::factory(Default::default(), None, std::time::Duration::from_millis(300))
             } else {
                 llm::http_factory()
@@ -76,5 +76,5 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![call])
         .run(tauri::generate_context!())
-        .expect("error while running Yakusoku");
+        .expect("error while running Yakusu");
 }

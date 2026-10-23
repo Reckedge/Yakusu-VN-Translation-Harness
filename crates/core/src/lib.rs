@@ -1,4 +1,4 @@
-//! Yakusoku (訳束) core: extract, translate, fit and patch Japanese visual
+//! Yakusu (訳す) core: extract, translate, fit and patch Japanese visual
 //! novel scripts. The desktop app and the browser dev server are thin shells
 //! around [`app::App`].
 

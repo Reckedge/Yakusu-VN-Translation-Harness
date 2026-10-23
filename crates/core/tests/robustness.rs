@@ -5,10 +5,10 @@
 mod common;
 use common::*;
 use std::sync::Arc;
-use yakusoku_core::engines::{self, generic, ks, manual, xp3, Entry, Installer};
-use yakusoku_core::pipeline::{Pipeline, SPEAKER_SKIP};
-use yakusoku_core::project::{Project, ResultRow};
-use yakusoku_core::protect::{check, protect};
+use yakusu_core::engines::{self, generic, ks, manual, xp3, Entry, Installer};
+use yakusu_core::pipeline::{Pipeline, SPEAKER_SKIP};
+use yakusu_core::project::{Project, ResultRow};
+use yakusu_core::protect::{check, protect};
 
 fn row(id: &str, en: &str) -> ResultRow {
     ResultRow { id: id.into(), en_ph: en.into(), stage: "translate".into(), ..Default::default() }
@@ -210,12 +210,12 @@ fn an_old_patch_is_not_read_as_the_original_after_a_reset() {
         pipe.install().unwrap();
     }
     assert!(game.join("patch.xp3").exists());
-    // Yakusoku's data folder is gone (reinstall, new PC): the patch is still in the game.
-    let env2 = yakusoku_core::config::Env::new(tmp.path().join("home2"), tmp.path().join("tools"));
+    // Yakusu's data folder is gone (reinstall, new PC): the patch is still in the game.
+    let env2 = yakusu_core::config::Env::new(tmp.path().join("home2"), tmp.path().join("tools"));
     let pipe = pipeline(&env2, &game, settings("quick", 50, 2), fake().0);
     let st = pipe.extract().unwrap();
     assert_eq!(st.lines, 8);
-    assert!(pipe.live_lines().iter().all(|l| yakusoku_core::protect::has_japanese(&l.jp)));
+    assert!(pipe.live_lines().iter().all(|l| yakusu_core::protect::has_japanese(&l.jp)));
     // Building again writes the next free patch name rather than clobbering silently.
     pipe.translate(None, false).unwrap();
     pipe.build().unwrap();
@@ -227,7 +227,7 @@ fn an_old_patch_is_not_read_as_the_original_after_a_reset() {
 #[test]
 #[ignore]
 fn large_kirikiri_roundtrip() {
-    let count = std::env::var("YAKUSOKU_LARGE").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000usize);
+    let count = std::env::var("YAKUSU_LARGE").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000usize);
     let tmp = tempfile::tempdir().unwrap();
     let env = env(tmp.path());
     let game = tmp.path().join("Load Game");
@@ -285,4 +285,24 @@ fn large_kirikiri_roundtrip() {
         t0.elapsed().as_secs_f64(),
         t1.elapsed().as_secs_f64()
     );
+}
+
+#[test]
+fn data_from_the_yakusoku_builds_moves_over() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old = tmp.path().join("Yakusoku");
+    let new = tmp.path().join("Yakusu");
+    std::fs::create_dir_all(old.join("projects/game-1234")).unwrap();
+    std::fs::write(old.join("projects/game-1234/project.json"), "{}").unwrap();
+    std::fs::write(old.join("settings.json"), r#"{"provider":"openai"}"#).unwrap();
+    std::fs::create_dir_all(old.join("tools-abc")).unwrap();
+    // A project the new folder already has is left alone.
+    std::fs::create_dir_all(new.join("projects/kept-1")).unwrap();
+    std::fs::create_dir_all(old.join("projects/kept-1")).unwrap();
+    std::fs::write(old.join("projects/kept-1/project.json"), "old").unwrap();
+    yakusu_core::config::migrate_home(&old, &new);
+    assert!(new.join("projects/game-1234/project.json").exists());
+    assert!(new.join("settings.json").exists());
+    assert!(!new.join("projects/kept-1/project.json").exists());
+    assert!(!old.join("projects/game-1234").exists());
 }

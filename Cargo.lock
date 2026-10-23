@@ -5240,7 +5240,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "yakusoku"
+name = "yakusu"
 version = "0.2.0"
 dependencies = [
  "serde_json",
@@ -5249,12 +5249,12 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
- "yakusoku-core",
+ "yakusu-core",
  "zip",
 ]
 
 [[package]]
-name = "yakusoku-core"
+name = "yakusu-core"
 version = "0.2.0"
 dependencies = [
  "chrono",

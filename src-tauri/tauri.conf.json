@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Yakusoku",
+  "productName": "Yakusu",
   "version": "0.2.0",
-  "identifier": "io.github.reckedge.yakusoku",
+  "identifier": "io.github.reckedge.yakusu",
   "build": {
     "frontendDist": "../ui"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Yakusoku",
+        "title": "Yakusu",
         "width": 1240,
         "height": 820,
         "minWidth": 860,
@@ -24,10 +24,7 @@
     }
   },
   "bundle": {
-    "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "active": false,
     "category": "Utility",
     "shortDescription": "Translate Japanese visual novels into English patches",
     "longDescription": "Pick a game folder, paste an API key, get an installable English patch. Every change can be undone.",
@@ -39,13 +36,7 @@
       "icons/128x128@2x.png",
       "icons/icon.ico",
       "icons/icon.png"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "installerIcon": "icons/icon.ico"
-      }
-    }
+    ]
   },
-  "mainBinaryName": "Yakusoku"
+  "mainBinaryName": "Yakusu"
 }

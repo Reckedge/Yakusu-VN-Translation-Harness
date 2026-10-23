@@ -898,9 +898,7 @@ impl App {
         let headers = rdr.headers().map_err(|e| Error::User(format!("That CSV couldn't be read: {e}")))?.clone();
         let col = |name: &str| headers.iter().position(|h| h.trim() == name);
         let (Some(ci), Some(ce)) = (col("id"), col("english")) else {
-            return user(
-                "That CSV needs \"id\" and \"english\" columns. Export from Yakusoku first and edit that file.",
-            );
+            return user("That CSV needs \"id\" and \"english\" columns. Export from Yakusu first and edit that file.");
         };
         let (mut rows, mut changed, mut problems, mut unknown) = (Vec::new(), 0, 0, 0);
         for rec in rdr.records().flatten() {

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use yakusoku_core::app::App;
+use yakusu_core::app::App;
 
 fn app(tmp: &std::path::Path) -> Arc<App> {
     App::with_opener(env(tmp), fake().0, Box::new(|_| Ok(())))
@@ -156,7 +156,7 @@ fn stop_reaches_the_running_pipeline() {
         for _ in 0..200 {
             if pipe.cancel.load(Ordering::SeqCst) {
                 s2.store(true, Ordering::SeqCst);
-                return Err(yakusoku_core::Error::Cancelled);
+                return Err(yakusu_core::Error::Cancelled);
             }
             std::thread::sleep(Duration::from_millis(10));
         }

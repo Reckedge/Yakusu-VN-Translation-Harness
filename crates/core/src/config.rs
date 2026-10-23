@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
-pub const APP_NAME: &str = "Yakusoku";
+pub const APP_NAME: &str = "Yakusu";
 
 /// Where things live: the user's data folder and the bundled tools.
 #[derive(Clone, Debug)]
@@ -21,13 +21,17 @@ impl Env {
         e
     }
 
-    /// The standard data folder (`YAKUSOKU_HOME` overrides it).
+    /// The standard data folder (`YAKUSU_HOME` overrides it).
     pub fn system(tools: impl Into<PathBuf>) -> Env {
-        let home = match std::env::var_os("YAKUSOKU_HOME") {
+        let home = match std::env::var_os("YAKUSU_HOME") {
             Some(h) if !h.is_empty() => PathBuf::from(h),
             _ if cfg!(windows) => dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join(APP_NAME),
-            _ => dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".yakusoku"),
+            _ => dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".yakusu"),
         };
+        // Builds named "Yakusoku" kept their data next door: bring it over.
+        if let Some(old) = home.parent().map(|p| p.join(if cfg!(windows) { "Yakusoku" } else { ".yakusoku" })) {
+            migrate_home(&old, &home);
+        }
         Env::new(home, tools)
     }
 
@@ -40,10 +44,10 @@ impl Env {
     }
 
     /// Find a bundled tool (msg-tool, VNTextPatch, ...).
-    /// `YAKUSOKU_MSG_TOOL`-style variables override the search.
+    /// `YAKUSU_MSG_TOOL`-style variables override the search.
     pub fn tool_path(&self, name: &str) -> Option<PathBuf> {
         let exe = if cfg!(windows) && !name.ends_with(".exe") { format!("{name}.exe") } else { name.to_string() };
-        let var = format!("YAKUSOKU_{}", name.to_uppercase().replace('-', "_"));
+        let var = format!("YAKUSU_{}", name.to_uppercase().replace('-', "_"));
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Some(v) = std::env::var_os(&var) {
             if !v.is_empty() {
@@ -69,6 +73,37 @@ impl Env {
     pub fn save_settings(&self, s: &Settings) -> std::io::Result<()> {
         write_json_atomic(&self.settings_path(), &serde_json::to_value(s)?)
     }
+}
+
+/// Move projects and settings from an older data folder into `new`.
+/// Projects already in `new` win; nothing is overwritten.
+pub fn migrate_home(old: &Path, new: &Path) {
+    if !old.is_dir() || old == new {
+        return;
+    }
+    let _ = std::fs::create_dir_all(new.join("projects"));
+    if let Ok(rd) = std::fs::read_dir(old.join("projects")) {
+        for e in rd.flatten() {
+            let dst = new.join("projects").join(e.file_name());
+            if !dst.exists() {
+                let _ = std::fs::rename(e.path(), dst);
+            }
+        }
+    }
+    let settings = new.join("settings.json");
+    if !settings.exists() {
+        let _ = std::fs::rename(old.join("settings.json"), settings);
+    }
+    // Unpacked tools are re-created on demand; drop the old copy.
+    if let Ok(rd) = std::fs::read_dir(old) {
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().starts_with("tools-") {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    let _ = std::fs::remove_dir(old.join("projects"));
+    let _ = std::fs::remove_dir(old);
 }
 
 fn which_in_path(exe: &str) -> Option<PathBuf> {

@@ -9,7 +9,7 @@ use std::path::Path;
 fn exe(cx: &Ctx) -> Result<String> {
     match cx.env.tool_path("msg-tool").or_else(|| cx.env.tool_path("msg_tool")) {
         Some(p) => Ok(p.to_string_lossy().to_string()),
-        None => user("msg-tool is missing. Reinstall Yakusoku (it ships inside the app)."),
+        None => user("msg-tool is missing. Reinstall Yakusu (it ships inside the app)."),
     }
 }
 

@@ -1,15 +1,15 @@
 //! Archive plumbing against the real msg-tool binary (skipped unless
-//! YAKUSOKU_REAL_MSG_TOOL points at one). These caught the dotted-folder and
+//! YAKUSU_REAL_MSG_TOOL points at one). These caught the dotted-folder and
 //! YU-RIS version bugs that a well-behaved stand-in hides.
 
 mod common;
 use common::*;
 use std::path::{Path, PathBuf};
-use yakusoku_core::engines::{generic, msgtool, xp3, Ctx};
-use yakusoku_core::project::Project;
+use yakusu_core::engines::{generic, msgtool, xp3, Ctx};
+use yakusu_core::project::Project;
 
 fn real_tool(tmp: &Path) -> Option<PathBuf> {
-    let src = PathBuf::from(std::env::var_os("YAKUSOKU_REAL_MSG_TOOL")?);
+    let src = PathBuf::from(std::env::var_os("YAKUSU_REAL_MSG_TOOL")?);
     let tools = tmp.join("tools");
     std::fs::create_dir_all(&tools).unwrap();
     let dst = tools.join(if cfg!(windows) { "msg-tool.exe" } else { "msg-tool" });
@@ -18,9 +18,9 @@ fn real_tool(tmp: &Path) -> Option<PathBuf> {
 }
 
 fn files(dir: &Path) -> Vec<(String, Vec<u8>)> {
-    let mut v: Vec<_> = yakusoku_core::engines::list_files(dir, None)
+    let mut v: Vec<_> = yakusu_core::engines::list_files(dir, None)
         .into_iter()
-        .map(|r| (r.replace('\\', "/"), std::fs::read(yakusoku_core::engines::join_rel(dir, &r)).unwrap()))
+        .map(|r| (r.replace('\\', "/"), std::fs::read(yakusu_core::engines::join_rel(dir, &r)).unwrap()))
         .collect();
     v.sort();
     v
@@ -30,7 +30,7 @@ fn files(dir: &Path) -> Vec<(String, Vec<u8>)> {
 fn archives_roundtrip_through_the_real_tool() {
     let tmp = tempfile::tempdir().unwrap();
     if real_tool(tmp.path()).is_none() {
-        eprintln!("YAKUSOKU_REAL_MSG_TOOL not set; skipping");
+        eprintln!("YAKUSU_REAL_MSG_TOOL not set; skipping");
         return;
     }
     let env = env(tmp.path());

@@ -3,11 +3,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use yakusoku_core::config::{Env, Settings};
-use yakusoku_core::engines::{self, xp3};
-use yakusoku_core::llm::{self, ClientFactory};
-use yakusoku_core::pipeline::Pipeline;
-use yakusoku_core::project::Project;
+use yakusu_core::config::{Env, Settings};
+use yakusu_core::engines::{self, xp3};
+use yakusu_core::llm::{self, ClientFactory};
+use yakusu_core::pipeline::Pipeline;
+use yakusu_core::project::Project;
 
 pub const FIRST_KS: &str = "*start|プロローグ
 [cm]

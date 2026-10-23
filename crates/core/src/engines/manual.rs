@@ -1,6 +1,6 @@
-//! "Translate script files" mode, for engines Yakusoku can't unpack itself.
+//! "Translate script files" mode, for engines Yakusu can't unpack itself.
 //!
-//! You point Yakusoku at a folder of already-extracted script files (from
+//! You point Yakusu at a folder of already-extracted script files (from
 //! GARbro, unrpa, or the game folder itself for Ren'Py .rpy). msg-tool is
 //! tried first, then VNTextPatch (arcusmaximus, MIT), which covers ~25
 //! engines and handles Shift-JIS "tunneling" for characters SJIS can't show.

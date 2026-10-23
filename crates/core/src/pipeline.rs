@@ -1126,7 +1126,7 @@ impl Pipeline {
         let missing = self.missing_names().len();
         if missing > 0 {
             notes.push(info(format!(
-                "{missing} speaker{} no English name yet. Yakusoku will name them before translating.",
+                "{missing} speaker{} no English name yet. Yakusu will name them before translating.",
                 if missing == 1 { " has" } else { "s have" }
             )));
         }
@@ -1141,7 +1141,7 @@ impl Pipeline {
             if let (Some(lo), Some(spent)) = (est.pointer("/total/0").and_then(Value::as_f64), est["spent"].as_f64()) {
                 if lo + spent > cap {
                     notes.push(warn(format!(
-                        "Your ${cap:.2} spending limit is probably lower than this run will cost. Yakusoku will stop when it reaches it; progress is kept."
+                        "Your ${cap:.2} spending limit is probably lower than this run will cost. Yakusu will stop when it reaches it; progress is kept."
                     )));
                 }
             }

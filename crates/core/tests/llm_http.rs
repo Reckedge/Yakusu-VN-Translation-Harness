@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use yakusoku_core::llm::{self, Client, Llm, LlmError};
+use yakusu_core::llm::{self, Client, Llm, LlmError};
 
 type Reply = (u16, Value, Vec<(&'static str, &'static str)>);
 

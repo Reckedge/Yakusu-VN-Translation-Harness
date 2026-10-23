@@ -6,7 +6,7 @@
 //!   unpack archive -> export scripts -> (translate) -> import -> repack the
 //!   archive with the patched scripts -> install over the original (backed up).
 //!
-//! Engines whose archives can be read but not rebuilt are "manual": Yakusoku
+//! Engines whose archives can be read but not rebuilt are "manual": Yakusu
 //! produces the patched script files and says where they go.
 
 use super::{clean_dir, copy_tree, join_rel, list_files, msgtool, read_json_messages, Ctx, Engine, Entry, Match};
@@ -97,7 +97,7 @@ pub const PROFILES: &[Profile] = &[
         script_type: Some("cat-system"),
         support: "manual",
         no_repack: true,
-        note: "Yakusoku can read CatSystem2 archives but can't rebuild them yet. You'll get patched .cst files to pack with CatSystem2 tools.",
+        note: "Yakusu can read CatSystem2 archives but can't rebuild them yet. You'll get patched .cst files to pack with CatSystem2 tools.",
         ..P
     },
     Profile {
@@ -108,7 +108,7 @@ pub const PROFILES: &[Profile] = &[
         script_type: Some("softpal"),
         support: "manual",
         no_repack: true,
-        note: "Yakusoku can read Softpal archives but can't rebuild them yet. You'll get patched script files.",
+        note: "Yakusu can read Softpal archives but can't rebuild them yet. You'll get patched script files.",
         ..P
     },
 ];
@@ -123,7 +123,7 @@ const KNOWN_UNSUPPORTED: &[(&[&str], &str, &str)] = &[
     (
         &["Rio.arc", "Rio*.arc"],
         "WillPlus / AdvHD",
-        "Extract the .ws2 scripts from Rio.arc with GARbro, then use \"Translate script files\" and point Yakusoku at that folder.",
+        "Extract the .ws2 scripts from Rio.arc with GARbro, then use \"Translate script files\" and point Yakusu at that folder.",
     ),
     (
         &["renpy", "game/*.rpa"],

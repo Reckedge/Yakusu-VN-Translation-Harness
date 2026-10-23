@@ -281,7 +281,7 @@ pub fn run_tool(args: &[String], cx: &Ctx) -> Result<(i32, String)> {
     }
     let out = cmd.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            Error::User(format!("Missing tool: {}. Reinstall Yakusoku or put the tool in the tools folder.", args[0]))
+            Error::User(format!("Missing tool: {}. Reinstall Yakusu or put the tool in the tools folder.", args[0]))
         } else {
             Error::User(format!("Couldn't run {}: {e}", args[0]))
         }
@@ -361,13 +361,13 @@ impl Installer {
             }
         }
         fs::create_dir_all(dst.parent().unwrap())?;
-        let tmp = dst.with_file_name(format!("{}.yakusoku-tmp", dst.file_name().unwrap().to_string_lossy()));
+        let tmp = dst.with_file_name(format!("{}.yakusu-tmp", dst.file_name().unwrap().to_string_lossy()));
         let r = fs::copy(src, &tmp).and_then(|_| fs::rename(&tmp, &dst));
         if let Err(e) = r {
             let _ = fs::remove_file(&tmp);
             if e.kind() == std::io::ErrorKind::PermissionDenied {
                 return user(format!(
-                    "Windows won't let Yakusoku replace {rel}. Close the game (and anything else using its files), then try again."
+                    "Windows won't let Yakusu replace {rel}. Close the game (and anything else using its files), then try again."
                 ));
             }
             return Err(e.into());
@@ -379,9 +379,7 @@ impl Installer {
     pub fn restore(&mut self, game: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<()> {
         let denied = |e: std::io::Error| -> Error {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                Error::User(
-                    "Windows won't let Yakusoku change the game's files. Close the game, then try again.".into(),
-                )
+                Error::User("Windows won't let Yakusu change the game's files. Close the game, then try again.".into())
             } else {
                 e.into()
             }

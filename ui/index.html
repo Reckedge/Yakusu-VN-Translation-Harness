@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Yakusoku</title>
+<title>Yakusu</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<script src="theme.js"></script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -12,24 +13,24 @@
   <defs>
     <path id="petal-shape" d="M0 0C-6.5-4.5-7-12.5-2.4-15.6L0-13.2L2.4-15.6C7-12.5 6.5-4.5 0 0Z"/>
     <symbol id="flower" viewBox="-17 -17 34 34">
-      <g fill="#f2b8cb">
+      <g style="fill: var(--bloom)">
         <use href="#petal-shape"/>
         <use href="#petal-shape" transform="rotate(72)"/>
         <use href="#petal-shape" transform="rotate(144)"/>
         <use href="#petal-shape" transform="rotate(216)"/>
         <use href="#petal-shape" transform="rotate(288)"/>
       </g>
-      <circle r="3.2" fill="#d2465a"/>
-      <g stroke="#e58fae" stroke-width=".9" stroke-linecap="round">
+      <circle r="3.2" style="fill: var(--bloom-heart)"/>
+      <g style="stroke: var(--bloom-line)" stroke-width=".9" stroke-linecap="round">
         <path d="M0 0L0-6.5M0 0L6.2-2M0 0L3.8 5.3M0 0L-3.8 5.3M0 0L-6.2-2"/>
       </g>
     </symbol>
     <symbol id="bud" viewBox="-6 -9 12 18">
-      <path d="M0 8C-4 4-4-3 0-8 4-3 4 4 0 8Z" fill="#e58fae"/>
+      <path d="M0 8C-4 4-4-3 0-8 4-3 4 4 0 8Z" style="fill: var(--bloom-line)"/>
     </symbol>
     <!-- An original branch: one bough, three twigs, blossoms in clusters. -->
     <symbol id="branch" viewBox="0 0 420 270">
-      <g fill="none" stroke="#2b2140" stroke-linecap="round">
+      <g fill="none" style="stroke: var(--bark)" stroke-linecap="round">
         <path d="M-10 28C70 30 120 52 178 86S300 150 410 152" stroke-width="11"/>
         <path d="M150 70C170 40 196 22 236 12" stroke-width="5"/>
         <path d="M232 112C246 150 252 186 276 232" stroke-width="5.5"/>
@@ -61,9 +62,9 @@
 <div class="shell">
   <nav class="rail" aria-label="Steps">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">訳束</span>
+      <span class="brand-mark" aria-hidden="true">訳す</span>
       <div>
-        <div class="brand-name">Yakusoku</div>
+        <div class="brand-name">Yakusu</div>
         <div class="brand-game" id="railGame">No game open</div>
       </div>
     </div>
@@ -83,6 +84,10 @@
       <button data-view="activity">Activity</button>
     </div>
     <div class="rail-foot" id="railFoot"></div>
+    <div class="theme-switch seg seg-sm" role="radiogroup" aria-label="Theme">
+      <button data-theme-pick="light" role="radio">Light</button>
+      <button data-theme-pick="dark" role="radio">Dark</button>
+    </div>
   </nav>
 
   <main class="main" id="main">
@@ -99,7 +104,7 @@
     <section class="view" data-view="game">
       <header class="view-head">
         <h1>Pick the game</h1>
-        <p>Choose the folder the game is installed in, the one with its .exe. Yakusoku only reads it until you install a patch, and every change can be undone.</p>
+        <p>Choose the folder the game is installed in, the one with its .exe. Yakusu only reads it until you install a patch, and every change can be undone.</p>
       </header>
       <div class="picker" id="picker">
         <svg class="branch" aria-hidden="true"><use href="#branch"/></svg>
@@ -118,7 +123,7 @@
     <section class="view" data-view="translator">
       <header class="view-head">
         <h1>Choose the translator</h1>
-        <p>Yakusoku sends the script to an AI model with your own API key. You pay the provider directly, and you see the estimate before anything is spent.</p>
+        <p>Yakusu sends the script to an AI model with your own API key. You pay the provider directly, and you see the estimate before anything is spent.</p>
       </header>
       <div class="field-group">
         <div class="label">Provider</div>
@@ -133,7 +138,7 @@
         <label class="label" for="budget">Spending limit</label>
         <div class="inline">
           <span class="affix">$</span><input id="budget" type="number" min="0" step="1" class="input input-short" placeholder="0">
-          <span class="hint">Yakusoku stops when it has spent this much. 0 means no limit.</span>
+          <span class="hint">Yakusu stops when it has spent this much. 0 means no limit.</span>
         </div>
       </div>
       <details class="advanced">
@@ -235,7 +240,7 @@
     <section class="view" data-view="run">
       <header class="view-head">
         <h1>Translate the whole game</h1>
-        <p>Yakusoku translates in batches and saves as it goes, so you can stop at any time and pick up later. When it finishes, it rewrites lines that overflow the text box, then builds and installs the patch.</p>
+        <p>Yakusu translates in batches and saves as it goes, so you can stop at any time and pick up later. When it finishes, it rewrites lines that overflow the text box, then builds and installs the patch.</p>
       </header>
       <div id="kept"></div>
       <div class="run-summary" id="runSummary"></div>
@@ -287,7 +292,7 @@
 
     <!-- Activity -->
     <section class="view wide" data-view="activity">
-      <header class="view-head"><h1>Activity</h1><p>What Yakusoku has been doing, including output from the tools it runs.</p></header>
+      <header class="view-head"><h1>Activity</h1><p>What Yakusu has been doing, including output from the tools it runs.</p></header>
       <pre class="log" id="log"></pre>
     </section>
   </main>

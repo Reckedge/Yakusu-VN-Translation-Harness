@@ -1,8 +1,8 @@
 //! Unit tests: placeholders, wrapping, KAG parsing, xp3, descrambling.
 
-use yakusoku_core::engines::{ks, xp3};
-use yakusoku_core::protect::{check, protect, restore};
-use yakusoku_core::textfit::{self, measure_box, wrap};
+use yakusu_core::engines::{ks, xp3};
+use yakusu_core::protect::{check, protect, restore};
+use yakusu_core::textfit::{self, measure_box, wrap};
 
 fn e(name: Option<&str>, msg: &str) -> ks::Entry {
     ks::Entry { name: name.map(String::from), names: None, message: msg.into() }
@@ -196,7 +196,7 @@ fn xp3_roundtrip() {
 
 #[test]
 fn fuzzy_title_similarity() {
-    use yakusoku_core::engines::kirikiri::similarity;
+    use yakusu_core::engines::kirikiri::similarity;
     assert!((similarity("abcd", "abcd") - 1.0).abs() < 1e-9);
     assert!(similarity("sakuramoyu", "sakura moyu") > 0.9);
     assert!(similarity("xyz", "abc") < 0.1);
@@ -204,7 +204,7 @@ fn fuzzy_title_similarity() {
 
 #[test]
 fn glob_and_fnmatch() {
-    use yakusoku_core::engines::generic::{fnmatch, glob};
+    use yakusu_core::engines::generic::{fnmatch, glob};
     assert!(fnmatch("DATA01.arc", "data0*.arc"));
     assert!(fnmatch("x.pfs.000", "*.pfs.*"));
     assert!(!fnmatch("x.pfs", "*.pfs.*"));

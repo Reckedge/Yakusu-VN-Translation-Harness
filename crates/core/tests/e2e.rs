@@ -5,9 +5,9 @@ mod common;
 use common::*;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use yakusoku_core::engines::{ks, xp3};
-use yakusoku_core::llm::LlmError;
-use yakusoku_core::Error;
+use yakusu_core::engines::{ks, xp3};
+use yakusu_core::llm::LlmError;
+use yakusu_core::Error;
 
 #[test]
 fn full_flow() {
@@ -192,7 +192,7 @@ fn garbage_replies_end_as_flagged_lines_not_crashes() {
         assert!(pipe.live_lines().iter().all(|l| res.get(&l.id).is_some_and(|r| !r.problems.is_empty())));
     });
     // Flagged lines are retried on the next run.
-    let pipe2 = yakusoku_core::pipeline::Pipeline::new(env.clone(), pipe.p.clone(), settings("quick", 4, 2), fake().0);
+    let pipe2 = yakusu_core::pipeline::Pipeline::new(env.clone(), pipe.p.clone(), settings("quick", 4, 2), fake().0);
     pipe2.translate(None, false).unwrap();
     pipe.p.with_results(|res| assert!(res.values().all(|r| r.good())));
 }
@@ -233,7 +233,7 @@ fn cancel_stops_and_keeps_finished_work() {
             while !*open {
                 open = c.wait(open).unwrap();
             }
-            return Some(Ok(yakusoku_core::llm::fake::reply(s, u)));
+            return Some(Ok(yakusu_core::llm::fake::reply(s, u)));
         }
         None
     }));

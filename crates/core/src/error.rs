@@ -28,7 +28,7 @@ impl fmt::Display for Error {
             Error::Truncated => f.write_str("A reply was cut off by the length limit."),
             Error::Io(e) => match e.kind() {
                 std::io::ErrorKind::PermissionDenied => f.write_str(
-                    "Windows won't let Yakusoku change those files. Close the game (and anything else using its files), then try again.",
+                    "Windows won't let Yakusu change those files. Close the game (and anything else using its files), then try again.",
                 ),
                 std::io::ErrorKind::NotFound => write!(f, "A file or folder is missing: {e}"),
                 _ => write!(f, "File error: {e}"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stand-in for msg-tool's command line, for testing Yakusoku's plumbing.
+"""A stand-in for msg-tool's command line, for testing Yakusu's plumbing.
 
 Script format: UTF-8 text, one message per line, "name|message" or "|message".
 Archive format: a zip file.

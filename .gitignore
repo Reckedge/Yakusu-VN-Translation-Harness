@@ -1,6 +1,5 @@
 /target
 /src-tauri/gen
-/tools/*
-!/tools/README.md
+/tools
 *.tmp
 __pycache__/

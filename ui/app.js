@@ -1,4 +1,4 @@
-/* Yakusoku interface. All state lives in the Rust core; this file asks for it
+/* Yakusu interface. All state lives in the Rust core; this file asks for it
    with call(command, args) and draws it. Inside the desktop app the call goes
    through Tauri; in a browser (dev server) it goes over HTTP. */
 (function () {
@@ -23,7 +23,7 @@
     }
     const r = await fetch('/api/call', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Yakusoku-Token': window.__YAKUSOKU_TOKEN__ || '' },
+      headers: { 'Content-Type': 'application/json', 'X-Yakusu-Token': window.__YAKUSU_TOKEN__ || '' },
       body: JSON.stringify({ cmd, args }),
     });
     let data = {};
@@ -78,6 +78,18 @@
     }
   }
   $$('.petals[data-petals]').forEach((el) => petals(el, +el.dataset.petals));
+
+  // Light (sakura by day) or dark (yozakura). Saved per computer.
+  function drawThemeSwitch() {
+    const cur = window.__yakusuTheme.current();
+    $$('[data-theme-pick]').forEach((b) => {
+      const on = (b.dataset.themePick === 'dark') === (cur === 'dark');
+      b.setAttribute('aria-pressed', String(on));
+      b.setAttribute('aria-checked', String(on));
+    });
+  }
+  $$('[data-theme-pick]').forEach((b) => b.addEventListener('click', () => { window.__yakusuTheme.set(b.dataset.themePick); drawThemeSwitch(); }));
+  drawThemeSwitch();
 
   let toastTimer;
   function toast(msg, err) {
@@ -186,7 +198,7 @@
     const j = S.job || {};
     $('#jobbar').hidden = !j.running;
     renderBanner();
-    if (!j.running) { document.title = 'Yakusoku'; return; }
+    if (!j.running) { document.title = 'Yakusu'; return; }
     $('#jobStage').textContent = STAGE[j.stage] || STAGE[j.action] || 'Working';
     $('#jobMsg').textContent = j.message && j.message !== STAGE[j.stage] ? j.message : '';
     const fill = $('#jobFill');
@@ -203,12 +215,12 @@
         parts.push(h('span', { text: left < 90 ? `about ${Math.max(10, Math.round(left / 10) * 10)} s left` : `about ${duration(left)} left` }));
       }
       numEl.replaceChildren(...parts);
-      document.title = `${pct}% · Yakusoku`;
+      document.title = `${pct}% · Yakusu`;
     } else {
       fill.classList.add('indeterminate');
       fill.style.width = '';
       numEl.replaceChildren();
-      document.title = 'Working · Yakusoku';
+      document.title = 'Working · Yakusu';
     }
   }
   function duration(sec) {
@@ -315,7 +327,7 @@
     if (!eng) {
       const u = S.matches.find((m) => m.engine_id === 'unsupported');
       card.append(h('p', { class: 'note', text: u ? `${u.name}: ${u.note}` :
-        'Yakusoku didn\'t recognise this game\'s engine. If you have its script files extracted (for example with GARbro), translate them directly.' }));
+        'Yakusu didn\'t recognise this game\'s engine. If you have its script files extracted (for example with GARbro), translate them directly.' }));
     }
     const others = S.matches.filter((m) => eng && m.engine_id !== eng.engine_id && m.engine_id !== 'unsupported');
     if (others.length) {
@@ -356,7 +368,7 @@
   function titlePicker() {
     const wrap = h('div', { class: 'title-pick' },
       h('b', { text: 'This game\'s archives are encrypted. Which game is it?' }),
-      h('p', { class: 'hint', text: 'Yakusoku knows the encryption of about 500 Kirikiri games. Search by English or Japanese title.' }));
+      h('p', { class: 'hint', text: 'Yakusu knows the encryption of about 500 Kirikiri games. Search by English or Japanese title.' }));
     const input = h('input', { class: 'input', type: 'search', placeholder: 'Search titles', 'aria-label': 'Search game titles' });
     const list = h('ul');
     let t;
@@ -412,7 +424,7 @@
         h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'tmodel', text: 'Translation model' }), tm),
         h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'rmodel', text: 'Review model' }), rm)),
         h('div', { class: 'field-group' }, h('label', { class: 'label', for: 'burl', text: 'API address' }), bu,
-          h('p', { class: 'hint', text: s.provider === 'local' ? 'Start the local server in LM Studio (Developer tab) first. Local models are free but slower, and quality depends on the model.' : 'Cost estimates are only shown for Claude models. Yakusoku still counts the tokens it uses.' })));
+          h('p', { class: 'hint', text: s.provider === 'local' ? 'Start the local server in LM Studio (Developer tab) first. Local models are free but slower, and quality depends on the model.' : 'Cost estimates are only shown for Claude models. Yakusu still counts the tokens it uses.' })));
     }
     $('#presetGroup').hidden = s.provider !== 'anthropic';
     renderPresets();
@@ -622,7 +634,7 @@
   $('#launch2').addEventListener('click', launch);
   $$('[data-action]').forEach((b) => b.addEventListener('click', () => run(b.dataset.action)));
 
-  // The promise, kept: shown once when a full run finishes.
+  // 完訳 (a complete translation): shown once when a full run finishes.
   function showKept(applied) {
     const key = S.job.finished;
     if (keptShownFor === key) return;
@@ -630,8 +642,8 @@
     const pet = h('div', { class: 'petals', 'aria-hidden': 'true' });
     $('#kept').replaceChildren(h('div', { class: 'kept', role: 'status' },
       pet, svgUse('branch'),
-      h('h2', { lang: 'ja', text: '約束、果たした' }),
-      h('p', null, `Promise kept. ${applied ? plural(applied, 'line') + ' of ' + (S.project ? S.project.name : 'the game') + ' are' : 'The translation is'} in English and installed. Every change can still be undone from this page.`),
+      h('h2', { lang: 'ja', text: '完訳' }),
+      h('p', null, `Fully translated. ${applied ? plural(applied, 'line') + ' of ' + (S.project ? S.project.name : 'the game') + ' are' : 'The translation is'} in English and installed. Every change can still be undone from this page.`),
       h('div', { class: 'inline' },
         h('button', { class: 'btn btn-primary', onclick: launch }, 'Launch the game'),
         h('button', { class: 'btn btn-quiet', onclick: () => $('#kept').replaceChildren() }, 'Dismiss'))));

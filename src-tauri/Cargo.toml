@@ -1,13 +1,13 @@
 [package]
-name = "yakusoku"
-description = "Yakusoku (訳束): translate Japanese visual novels into English patches."
+name = "yakusu"
+description = "Yakusu (訳す): translate Japanese visual novels into English patches."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "Yakusoku"
+name = "Yakusu"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -16,7 +16,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 sha1_smol = "1"
 
 [dependencies]
-yakusoku-core = { path = "../crates/core" }
+yakusu-core = { path = "../crates/core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

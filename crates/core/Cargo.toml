@@ -1,6 +1,6 @@
 [package]
-name = "yakusoku-core"
-description = "Translation engine behind Yakusoku: extract, translate, fit and patch Japanese visual novel scripts."
+name = "yakusu-core"
+description = "Translation engine behind Yakusu: extract, translate, fit and patch Japanese visual novel scripts."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -34,6 +34,6 @@ tempfile = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [[bin]]
-name = "yakusoku-dev"
-path = "src/bin/yakusoku-dev.rs"
+name = "yakusu-dev"
+path = "src/bin/yakusu-dev.rs"
 required-features = ["dev-server"]

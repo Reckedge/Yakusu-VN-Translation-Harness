@@ -4,9 +4,9 @@ mod common;
 use common::*;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use yakusoku_core::engines::{self, manual};
-use yakusoku_core::pipeline::Pipeline;
-use yakusoku_core::project::Project;
+use yakusu_core::engines::{self, manual};
+use yakusu_core::pipeline::Pipeline;
+use yakusu_core::project::Project;
 
 const SCRIPT: &str = "桜|「おはよう、大雅くん！」\n|春の朝。窓の外では、桜が散っていた。\\n今日から新しい学校だ。\n|bg_room.png\n大雅|「ああ、おはよう」\n";
 
