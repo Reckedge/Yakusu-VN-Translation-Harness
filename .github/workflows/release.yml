@@ -1,10 +1,7 @@
 name: release
 # Builds Yakusu.exe (one file, tools packed inside) and attaches it to the
-# release. Publish a release (or push a tag like v0.2.0); run it by hand to
-# just get the file.
+# release when one is published on GitHub. Run it by hand to just get the file.
 on:
-  push:
-    tags: ['v*']
   release:
     types: [published]
   workflow_dispatch:
@@ -35,7 +32,7 @@ jobs:
         with:
           name: Yakusu
           path: target/release/Yakusu.exe
-      - if: startsWith(github.ref, 'refs/tags/')
+      - if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: target/release/Yakusu.exe
